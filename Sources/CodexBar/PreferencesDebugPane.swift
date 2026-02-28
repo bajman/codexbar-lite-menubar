@@ -239,6 +239,13 @@ struct DebugPane: View {
                     }
                 }
 
+                SettingsSection(title: "Appearance") {
+                    PreferenceToggleRow(
+                        title: "Enable Liquid Glass effects",
+                        subtitle: "Use native glass surfaces on macOS 26+. Restart may be required.",
+                        binding: self.$settings.liquidGlassEnabled)
+                }
+
                 SettingsSection(
                     title: "CLI sessions",
                     caption: "Keep Codex/Claude CLI sessions alive after a probe. Default exits once data is captured.")

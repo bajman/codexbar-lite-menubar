@@ -222,6 +222,7 @@ extension SettingsStore {
             forKey: "mergedOverviewSelectedProviders") as? [String] ?? []
         let selectedMenuProviderRaw = userDefaults.string(forKey: "selectedMenuProvider")
         let providerDetectionCompleted = userDefaults.object(forKey: "providerDetectionCompleted") as? Bool ?? false
+        let liquidGlassEnabled = userDefaults.object(forKey: "liquidGlassEnabled") as? Bool ?? true
 
         return SettingsDefaultsState(
             refreshFrequency: refreshFrequency,
@@ -255,7 +256,8 @@ extension SettingsStore {
             mergedMenuLastSelectedWasOverview: mergedMenuLastSelectedWasOverview,
             mergedOverviewSelectedProvidersRaw: mergedOverviewSelectedProvidersRaw,
             selectedMenuProviderRaw: selectedMenuProviderRaw,
-            providerDetectionCompleted: providerDetectionCompleted)
+            providerDetectionCompleted: providerDetectionCompleted,
+            liquidGlassEnabled: liquidGlassEnabled)
     }
 }
 

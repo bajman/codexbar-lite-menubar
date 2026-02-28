@@ -70,17 +70,20 @@ public struct WidgetSnapshot: Codable, Sendable {
     public let enabledProviders: [UsageProvider]
     public let usageBarsShowUsed: Bool
     public let generatedAt: Date
+    public let glassLayerPreference: String?
 
     public init(
         entries: [ProviderEntry],
         enabledProviders: [UsageProvider]? = nil,
         usageBarsShowUsed: Bool = false,
-        generatedAt: Date)
+        generatedAt: Date,
+        glassLayerPreference: String? = nil)
     {
         self.entries = entries
         self.enabledProviders = enabledProviders ?? entries.map(\.provider)
         self.usageBarsShowUsed = usageBarsShowUsed
         self.generatedAt = generatedAt
+        self.glassLayerPreference = glassLayerPreference
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -88,6 +91,7 @@ public struct WidgetSnapshot: Codable, Sendable {
         case enabledProviders
         case usageBarsShowUsed
         case generatedAt
+        case glassLayerPreference
     }
 
     public init(from decoder: Decoder) throws {
@@ -97,6 +101,7 @@ public struct WidgetSnapshot: Codable, Sendable {
         self.enabledProviders = try container.decodeIfPresent([UsageProvider].self, forKey: .enabledProviders)
             ?? self.entries.map(\.provider)
         self.usageBarsShowUsed = try container.decodeIfPresent(Bool.self, forKey: .usageBarsShowUsed) ?? false
+        self.glassLayerPreference = try container.decodeIfPresent(String.self, forKey: .glassLayerPreference)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -105,6 +110,7 @@ public struct WidgetSnapshot: Codable, Sendable {
         try container.encode(self.enabledProviders, forKey: .enabledProviders)
         try container.encode(self.usageBarsShowUsed, forKey: .usageBarsShowUsed)
         try container.encode(self.generatedAt, forKey: .generatedAt)
+        try container.encodeIfPresent(self.glassLayerPreference, forKey: .glassLayerPreference)
     }
 }
 
@@ -203,7 +209,8 @@ public enum WidgetSnapshotStore {
             entries: entries,
             enabledProviders: enabled.isEmpty ? entries.map(\.provider) : enabled,
             usageBarsShowUsed: snapshot.usageBarsShowUsed,
-            generatedAt: snapshot.generatedAt)
+            generatedAt: snapshot.generatedAt,
+            glassLayerPreference: snapshot.glassLayerPreference)
     }
 }
 

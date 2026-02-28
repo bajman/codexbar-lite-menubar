@@ -163,8 +163,13 @@ final class ProviderSwitcherView: NSView {
                 nil
             }
             self.addWeeklyIndicator(to: button, selection: segment.selection, remainingPercent: remaining)
-            button.bezelStyle = .regularSquare
-            button.isBordered = false
+            if #available(macOS 26, *), LiquidGlassAvailability.shouldApplyGlass {
+                button.bezelStyle = .glass
+                button.isBordered = true
+            } else {
+                button.bezelStyle = .regularSquare
+                button.isBordered = false
+            }
             button.controlSize = .small
             button.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
             button.setButtonType(.toggle)
@@ -519,16 +524,22 @@ final class ProviderSwitcherView: NSView {
     }
 
     private func updateButtonStyles() {
+        let glassActive: Bool = {
+            if #available(macOS 26, *) { return LiquidGlassAvailability.shouldApplyGlass }
+            return false
+        }()
         for button in self.buttons {
             let isSelected = button.state == .on
             let isHovered = self.hoveredButtonTag == button.tag
             button.contentTintColor = isSelected ? self.selectedTextColor : self.unselectedTextColor
-            button.layer?.backgroundColor = if isSelected {
-                self.selectedBackground
-            } else if isHovered {
-                self.hoverPlateColor()
-            } else {
-                self.unselectedBackground
+            if !glassActive {
+                button.layer?.backgroundColor = if isSelected {
+                    self.selectedBackground
+                } else if isHovered {
+                    self.hoverPlateColor()
+                } else {
+                    self.unselectedBackground
+                }
             }
             self.updateWeeklyIndicatorVisibility(for: button)
             (button as? StackedToggleButton)?.setContentTintColor(button.contentTintColor)
@@ -541,6 +552,10 @@ final class ProviderSwitcherView: NSView {
     }
 
     private func updateLightModeStyling() {
+        if #available(macOS 26, *), LiquidGlassAvailability.shouldApplyGlass {
+            self.lightModeOverlayLayer.backgroundColor = nil
+            return
+        }
         guard self.isLightMode() else {
             self.lightModeOverlayLayer.backgroundColor = nil
             return
@@ -853,7 +868,12 @@ final class TokenAccountSwitcherView: NSView {
                     action: #selector(self.handleSelect))
                 button.tag = globalIndex
                 button.toolTip = account.displayName
-                button.isBordered = false
+                if #available(macOS 26, *), LiquidGlassAvailability.shouldApplyGlass {
+                    button.bezelStyle = .glass
+                    button.isBordered = true
+                } else {
+                    button.isBordered = false
+                }
                 button.setButtonType(.toggle)
                 button.controlSize = .small
                 button.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
@@ -879,10 +899,16 @@ final class TokenAccountSwitcherView: NSView {
     }
 
     private func updateButtonStyles() {
+        let glassActive: Bool = {
+            if #available(macOS 26, *) { return LiquidGlassAvailability.shouldApplyGlass }
+            return false
+        }()
         for (index, button) in self.buttons.enumerated() {
             let selected = index == self.selectedIndex
             button.state = selected ? .on : .off
-            button.layer?.backgroundColor = selected ? self.selectedBackground : self.unselectedBackground
+            if !glassActive {
+                button.layer?.backgroundColor = selected ? self.selectedBackground : self.unselectedBackground
+            }
             button.contentTintColor = selected ? self.selectedTextColor : self.unselectedTextColor
         }
     }

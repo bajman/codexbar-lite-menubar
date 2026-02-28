@@ -470,6 +470,15 @@ extension SettingsStore {
         }
     }
 
+    var liquidGlassEnabled: Bool {
+        get { self.defaultsState.liquidGlassEnabled }
+        set {
+            self.defaultsState.liquidGlassEnabled = newValue
+            self.userDefaults.set(newValue, forKey: "liquidGlassEnabled")
+            Self.sharedDefaults?.set(newValue, forKey: "liquidGlassEnabled")
+        }
+    }
+
     var debugLoadingPattern: LoadingPattern? {
         get { self.debugLoadingPatternRaw.flatMap(LoadingPattern.init(rawValue:)) }
         set { self.debugLoadingPatternRaw = newValue?.rawValue }

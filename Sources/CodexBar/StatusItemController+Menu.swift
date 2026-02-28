@@ -1107,6 +1107,7 @@ extension StatusItemController {
             self.content
                 .environment(\.menuItemHighlighted, self.highlightState.isHighlighted)
                 .foregroundStyle(MenuHighlightStyle.primary(self.highlightState.isHighlighted))
+                .menuGlassBackground(layer: .shell, cornerRadius: 6)
                 .background(alignment: .topLeading) {
                     if self.highlightState.isHighlighted {
                         RoundedRectangle(cornerRadius: 6, style: .continuous)

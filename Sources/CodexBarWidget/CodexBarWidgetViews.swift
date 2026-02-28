@@ -132,10 +132,18 @@ private struct LiquidGlassFill: View {
     let style: WidgetSurfaceStyle
     @Environment(\.colorScheme) private var colorScheme
 
+    private static var nativeGlassAvailable: Bool {
+        if #available(macOS 26, *) { return true }
+        return false
+    }
+
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: WidgetLiquidGlass.radius, style: .continuous)
-                .fill(.ultraThinMaterial.opacity(WidgetLiquidGlass.baseOpacity(for: self.style, renderingMode: self.renderingMode)))
+            // Native glass provides its own blur -- skip manual material when available
+            if !Self.nativeGlassAvailable || self.renderingMode == .accented {
+                RoundedRectangle(cornerRadius: WidgetLiquidGlass.radius, style: .continuous)
+                    .fill(.ultraThinMaterial.opacity(WidgetLiquidGlass.baseOpacity(for: self.style, renderingMode: self.renderingMode)))
+            }
             RoundedRectangle(cornerRadius: WidgetLiquidGlass.radius, style: .continuous)
                 .fill(
                     LinearGradient(
@@ -179,21 +187,27 @@ private struct LiquidGlassFill: View {
                     )
             }
             self.styleOverlay
-            RoundedRectangle(cornerRadius: WidgetLiquidGlass.radius, style: .continuous)
-                .fill(Color.white.opacity(self.colorScheme == .dark ? 0.18 : 0.10))
-                .blendMode(.softLight)
-                .mask(
-                    RoundedRectangle(cornerRadius: WidgetLiquidGlass.radius, style: .continuous)
-                )
-            RoundedRectangle(cornerRadius: WidgetLiquidGlass.radius, style: .continuous)
-                .stroke(Color.white.opacity(self.colorScheme == .dark ? 0.26 : 0.16), lineWidth: 0.9)
-                .blendMode(.plusLighter)
-                .blur(radius: 0.3)
-                .opacity(self.renderingMode == .accented ? 0.7 : 0.45)
-                .mask(
-                    RoundedRectangle(cornerRadius: WidgetLiquidGlass.radius, style: .continuous)
-                )
-            if #available(macOS 26, *) {
+            // Native glass handles specular highlights -- skip manual softLight layer
+            if !Self.nativeGlassAvailable || self.renderingMode == .accented {
+                RoundedRectangle(cornerRadius: WidgetLiquidGlass.radius, style: .continuous)
+                    .fill(Color.white.opacity(self.colorScheme == .dark ? 0.18 : 0.10))
+                    .blendMode(.softLight)
+                    .mask(
+                        RoundedRectangle(cornerRadius: WidgetLiquidGlass.radius, style: .continuous)
+                    )
+            }
+            // Native glass handles edge highlights -- skip manual plusLighter stroke
+            if !Self.nativeGlassAvailable || self.renderingMode == .accented {
+                RoundedRectangle(cornerRadius: WidgetLiquidGlass.radius, style: .continuous)
+                    .stroke(Color.white.opacity(self.colorScheme == .dark ? 0.26 : 0.16), lineWidth: 0.9)
+                    .blendMode(.plusLighter)
+                    .blur(radius: 0.3)
+                    .opacity(self.renderingMode == .accented ? 0.7 : 0.45)
+                    .mask(
+                        RoundedRectangle(cornerRadius: WidgetLiquidGlass.radius, style: .continuous)
+                    )
+            }
+            if #available(macOS 26, *), self.renderingMode != .accented {
                 RoundedRectangle(cornerRadius: WidgetLiquidGlass.radius, style: .continuous)
                     .fill(.clear)
                     .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: WidgetLiquidGlass.radius, style: .continuous))
@@ -301,23 +315,33 @@ private struct GlassSurfaceLabel: View {
     let accent: Color
 
     var body: some View {
-        Text(self.text)
-            .font(.caption2)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
-            .background(
-                Capsule()
-                    .fill(.ultraThinMaterial)
-                    .overlay(
-                        Capsule()
-                            .stroke(
-                                LinearGradient(
-                                    colors: [self.accent.opacity(0.34), .clear],
-                                    startPoint: .top,
-                                    endPoint: .bottom),
-                                lineWidth: 0.55)))
-            .accessibilityHidden(true)
+        if #available(macOS 26, *) {
+            Text(self.text)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .glassEffect(.regular, in: Capsule())
+                .accessibilityHidden(true)
+        } else {
+            Text(self.text)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(
+                    Capsule()
+                        .fill(.ultraThinMaterial)
+                        .overlay(
+                            Capsule()
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [self.accent.opacity(0.34), .clear],
+                                        startPoint: .top,
+                                        endPoint: .bottom),
+                                    lineWidth: 0.55)))
+                .accessibilityHidden(true)
+        }
     }
 }
 
@@ -582,8 +606,32 @@ private struct ProviderSwitchChip: View {
     var body: some View {
         let label = self.compact ? self.shortLabel : self.longLabel
         let palette = WidgetColors.color(for: self.provider)
-        let borderOpacity = self.selected ? 0.72 : 0.22
         let labelColor = self.selected ? Color.primary : Color.secondary
+
+        if #available(macOS 26, *) {
+            Text(label)
+                .font(self.compact ? .caption2.weight(.semibold) : .caption.weight(.semibold))
+                .foregroundStyle(labelColor)
+                .padding(.horizontal, self.compact ? 6 : 8)
+                .padding(.vertical, self.compact ? 3 : 4)
+                .glassEffect(.regular.interactive(), in: Capsule())
+                .overlay {
+                    if self.selected {
+                        Capsule()
+                            .stroke(palette.opacity(0.72), lineWidth: 1.3)
+                            .blur(radius: 0.2)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .contentShape(Capsule())
+        } else {
+            self.legacyChip(label: label, palette: palette, labelColor: labelColor)
+        }
+    }
+
+    @ViewBuilder
+    private func legacyChip(label: String, palette: Color, labelColor: Color) -> some View {
+        let borderOpacity = self.selected ? 0.72 : 0.22
 
         Text(label)
             .font(self.compact ? .caption2.weight(.semibold) : .caption.weight(.semibold))

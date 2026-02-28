@@ -77,9 +77,18 @@ jobs:
           BIN="$BIN_DIR/CodexBarCLI"
           "$BIN" --help >/dev/null
           "$BIN" --version >/dev/null
-          if "$BIN" usage --provider codex --web >/dev/null 2>&1; then
-            echo "Expected --web to fail on Linux"
+          set +e
+          "$BIN" usage --provider codex --web >/tmp/codexbarcli-stderr.txt 2>&1
+          STATUS=$?
+          set -e
+          if [[ "$STATUS" -eq 0 ]]; then
+            echo "Expected --web to fail on Linux, but command succeeded."
+            cat /tmp/codexbarcli-stderr.txt
             exit 1
           fi
-          "$BIN" usage --provider codex --web 2>&1 | tee /tmp/codexbarcli-stderr.txt >/dev/null || true
-          grep -q "macOS" /tmp/codexbarcli-stderr.txt
+          # Keep this check resilient to wording updates while still proving expected rejection.
+          if ! grep -Eqi "(Error:|unknown option|--source auto\\|oauth|macOS)" /tmp/codexbarcli-stderr.txt; then
+            echo "Unexpected stderr for rejected --web invocation:"
+            cat /tmp/codexbarcli-stderr.txt
+            exit 1
+          fi

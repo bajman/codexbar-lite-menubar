@@ -92,7 +92,6 @@ struct GlassProviderSwitcherView: View {
                     .renderingMode(.template))
         }
     }
-
 }
 
 // MARK: - GlassTokenAccountSwitcherView

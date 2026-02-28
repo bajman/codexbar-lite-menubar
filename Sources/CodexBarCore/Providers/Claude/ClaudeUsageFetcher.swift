@@ -96,7 +96,8 @@ public struct ClaudeUsageFetcher: ClaudeUsageFetching, Sendable {
     public func debugRawProbe(model _: String = "sonnet") async -> String {
         do {
             let usage = try await self.loadLatestUsage(model: "sonnet")
-            return "session_left=\(usage.primary.remainingPercent) weekly_left=\(usage.secondary?.remainingPercent ?? -1)"
+            return "session_left=\(usage.primary.remainingPercent) "
+                + "weekly_left=\(usage.secondary?.remainingPercent ?? -1)"
         } catch {
             return "Probe failed: \(error)"
         }

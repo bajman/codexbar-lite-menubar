@@ -5,9 +5,7 @@ import Foundation
 // MARK: - Options & parsing helpers
 
 struct UsageOptions: CommanderParsable {
-    private static let sourceHelp: String = {
-        "Data source: auto | oauth"
-    }()
+    private static let sourceHelp: String = "Data source: auto | oauth"
 
     @Flag(names: [.short("v"), .long("verbose")], help: "Enable verbose logging")
     var verbose: Bool = false

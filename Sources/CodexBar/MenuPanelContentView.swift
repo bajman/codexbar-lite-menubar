@@ -213,11 +213,11 @@ struct MenuPanelContentView: View {
     }
 
     @ViewBuilder
-    private func chartDisclosure<Content: View>(
+    private func chartDisclosure(
         title: String,
         icon: String,
         chart: ExpandedChart,
-        @ViewBuilder content: @escaping () -> Content) -> some View
+        @ViewBuilder content: @escaping () -> some View) -> some View
     {
         Button {
             withAnimation(.easeInOut(duration: 0.2)) {
@@ -287,7 +287,6 @@ struct MenuPanelContentView: View {
         }
     }
 
-    @ViewBuilder
     private func textEntryView(text: String, style: MenuDescriptor.TextStyle) -> some View {
         switch style {
         case .headline:
@@ -311,7 +310,6 @@ struct MenuPanelContentView: View {
         }
     }
 
-    @ViewBuilder
     private func actionButton(title: String, action: MenuDescriptor.MenuAction) -> some View {
         Button {
             self.actions?.dismissPanel()

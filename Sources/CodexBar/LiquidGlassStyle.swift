@@ -6,13 +6,15 @@ struct MenuGlassBackground: ViewModifier {
     let cornerRadius: CGFloat
 
     func body(content: Content) -> some View {
-        if LiquidGlassAvailability.shouldApplyGlass, layer != .none {
+        if LiquidGlassAvailability.shouldApplyGlass, self.layer != .none {
             if #available(macOS 26, *) {
                 content.background {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    RoundedRectangle(cornerRadius: self.cornerRadius, style: .continuous)
                         .fill(.clear)
-                        .glassEffect(.regular.interactive(),
-                                     in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                        .glassEffect(
+                            .regular.interactive(),
+                            in: RoundedRectangle(
+                                cornerRadius: self.cornerRadius, style: .continuous))
                 }
             } else {
                 content

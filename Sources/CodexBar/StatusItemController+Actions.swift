@@ -318,5 +318,4 @@ extension StatusItemController {
         let body = "You can return to the app; authentication finished."
         AppNotifications.shared.post(idPrefix: "login-\(provider.rawValue)", title: title, body: body)
     }
-
 }

@@ -12,7 +12,9 @@ let package = Package(
         .package(url: "https://github.com/steipete/Commander", from: "0.2.1"),
         .package(url: "https://github.com/apple/swift-log", from: "1.9.1"),
         .package(url: "https://github.com/apple/swift-syntax", from: "600.0.1"),
+        #if os(macOS)
         .package(url: "https://github.com/sindresorhus/KeyboardShortcuts", from: "2.4.0"),
+        #endif
     ],
     targets: {
         var targets: [Target] = [
@@ -69,7 +71,9 @@ let package = Package(
             .executableTarget(
                 name: "CodexBar",
                 dependencies: [
+                    #if os(macOS)
                     .product(name: "KeyboardShortcuts", package: "KeyboardShortcuts"),
+                    #endif
                     "CodexBarMacroSupport",
                     "CodexBarCore",
                 ],

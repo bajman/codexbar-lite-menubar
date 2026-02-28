@@ -188,36 +188,6 @@ struct DebugPane: View {
                     .cornerRadius(6)
                 }
 
-                if !self.settings.debugDisableKeychainAccess {
-                    SettingsSection(
-                        title: "OpenAI cookies",
-                        caption: "Cookie import + WebKit scrape logs from the last OpenAI cookies attempt.")
-                    {
-                        HStack(spacing: 12) {
-                            Button {
-                                self.copyToPasteboard(self.store.openAIDashboardCookieImportDebugLog ?? "")
-                            } label: {
-                                Label("Copy", systemImage: "doc.on.doc")
-                            }
-                            .disabled((self.store.openAIDashboardCookieImportDebugLog ?? "").isEmpty)
-                        }
-
-                        ScrollView {
-                            Text(
-                                self.store.openAIDashboardCookieImportDebugLog?.isEmpty == false
-                                    ? (self.store.openAIDashboardCookieImportDebugLog ?? "")
-                                    : "No log yet. Update OpenAI cookies in Providers → Codex to run an import.")
-                                .font(.system(.footnote, design: .monospaced))
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(8)
-                        }
-                        .frame(minHeight: 120, maxHeight: 180)
-                        .background(Color(NSColor.textBackgroundColor))
-                        .cornerRadius(6)
-                    }
-                }
-
                 SettingsSection(
                     title: "Caches",
                     caption: "Clear cached cost scan results.")

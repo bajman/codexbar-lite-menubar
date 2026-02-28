@@ -1,7 +1,4 @@
 import Foundation
-#if canImport(SweetCookieKit)
-import SweetCookieKit
-#endif
 
 public enum KeychainAccessGate {
     private static let flagKey = "debugDisableKeychainAccess"
@@ -23,9 +20,7 @@ public enum KeychainAccessGate {
         }
         set {
             overrideValue = newValue
-            #if os(macOS) && canImport(SweetCookieKit)
             BrowserCookieKeychainAccessGate.isDisabled = newValue
-            #endif
         }
     }
 

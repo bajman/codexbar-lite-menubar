@@ -1,5 +1,15 @@
 import Foundation
 
+public enum MiniMaxAPIRegion: String, Sendable, Codable, CaseIterable {
+    case global
+    case cn
+}
+
+public enum ZaiAPIRegion: String, Sendable, Codable, CaseIterable {
+    case global
+    case cn
+}
+
 public struct ProviderSettingsSnapshot: Sendable {
     public static func make(
         debugMenuEnabled: Bool = false,
@@ -43,8 +53,8 @@ public struct ProviderSettingsSnapshot: Sendable {
 
         public init(
             usageDataSource: CodexUsageDataSource,
-            cookieSource: ProviderCookieSource,
-            manualCookieHeader: String?)
+            cookieSource: ProviderCookieSource = .off,
+            manualCookieHeader: String? = nil)
         {
             self.usageDataSource = usageDataSource
             self.cookieSource = cookieSource
@@ -60,9 +70,9 @@ public struct ProviderSettingsSnapshot: Sendable {
 
         public init(
             usageDataSource: ClaudeUsageDataSource,
-            webExtrasEnabled: Bool,
-            cookieSource: ProviderCookieSource,
-            manualCookieHeader: String?)
+            webExtrasEnabled: Bool = false,
+            cookieSource: ProviderCookieSource = .off,
+            manualCookieHeader: String? = nil)
         {
             self.usageDataSource = usageDataSource
             self.webExtrasEnabled = webExtrasEnabled
@@ -74,7 +84,6 @@ public struct ProviderSettingsSnapshot: Sendable {
     public struct CursorProviderSettings: Sendable {
         public let cookieSource: ProviderCookieSource
         public let manualCookieHeader: String?
-
         public init(cookieSource: ProviderCookieSource, manualCookieHeader: String?) {
             self.cookieSource = cookieSource
             self.manualCookieHeader = manualCookieHeader
@@ -85,7 +94,6 @@ public struct ProviderSettingsSnapshot: Sendable {
         public let cookieSource: ProviderCookieSource
         public let manualCookieHeader: String?
         public let workspaceID: String?
-
         public init(cookieSource: ProviderCookieSource, manualCookieHeader: String?, workspaceID: String?) {
             self.cookieSource = cookieSource
             self.manualCookieHeader = manualCookieHeader
@@ -96,7 +104,6 @@ public struct ProviderSettingsSnapshot: Sendable {
     public struct FactoryProviderSettings: Sendable {
         public let cookieSource: ProviderCookieSource
         public let manualCookieHeader: String?
-
         public init(cookieSource: ProviderCookieSource, manualCookieHeader: String?) {
             self.cookieSource = cookieSource
             self.manualCookieHeader = manualCookieHeader
@@ -107,7 +114,6 @@ public struct ProviderSettingsSnapshot: Sendable {
         public let cookieSource: ProviderCookieSource
         public let manualCookieHeader: String?
         public let apiRegion: MiniMaxAPIRegion
-
         public init(
             cookieSource: ProviderCookieSource,
             manualCookieHeader: String?,
@@ -121,7 +127,6 @@ public struct ProviderSettingsSnapshot: Sendable {
 
     public struct ZaiProviderSettings: Sendable {
         public let apiRegion: ZaiAPIRegion
-
         public init(apiRegion: ZaiAPIRegion = .global) {
             self.apiRegion = apiRegion
         }
@@ -134,7 +139,6 @@ public struct ProviderSettingsSnapshot: Sendable {
     public struct KimiProviderSettings: Sendable {
         public let cookieSource: ProviderCookieSource
         public let manualCookieHeader: String?
-
         public init(cookieSource: ProviderCookieSource, manualCookieHeader: String?) {
             self.cookieSource = cookieSource
             self.manualCookieHeader = manualCookieHeader
@@ -144,7 +148,6 @@ public struct ProviderSettingsSnapshot: Sendable {
     public struct AugmentProviderSettings: Sendable {
         public let cookieSource: ProviderCookieSource
         public let manualCookieHeader: String?
-
         public init(cookieSource: ProviderCookieSource, manualCookieHeader: String?) {
             self.cookieSource = cookieSource
             self.manualCookieHeader = manualCookieHeader
@@ -153,7 +156,6 @@ public struct ProviderSettingsSnapshot: Sendable {
 
     public struct JetBrainsProviderSettings: Sendable {
         public let ideBasePath: String?
-
         public init(ideBasePath: String?) {
             self.ideBasePath = ideBasePath
         }
@@ -162,7 +164,6 @@ public struct ProviderSettingsSnapshot: Sendable {
     public struct AmpProviderSettings: Sendable {
         public let cookieSource: ProviderCookieSource
         public let manualCookieHeader: String?
-
         public init(cookieSource: ProviderCookieSource, manualCookieHeader: String?) {
             self.cookieSource = cookieSource
             self.manualCookieHeader = manualCookieHeader
@@ -172,7 +173,6 @@ public struct ProviderSettingsSnapshot: Sendable {
     public struct OllamaProviderSettings: Sendable {
         public let cookieSource: ProviderCookieSource
         public let manualCookieHeader: String?
-
         public init(cookieSource: ProviderCookieSource, manualCookieHeader: String?) {
             self.cookieSource = cookieSource
             self.manualCookieHeader = manualCookieHeader

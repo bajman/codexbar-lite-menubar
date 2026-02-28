@@ -78,10 +78,6 @@ struct DisplayPane: View {
                         title: "Show credits + extra usage",
                         subtitle: "Show Codex Credits and Claude Extra usage sections in the menu.",
                         binding: self.$settings.showOptionalCreditsAndExtraUsage)
-                    PreferenceToggleRow(
-                        title: "Show all token accounts",
-                        subtitle: "Stack token accounts in the menu (otherwise show an account switcher bar).",
-                        binding: self.$settings.showAllTokenAccountsInMenu)
                     self.overviewProviderSelector
                 }
             }

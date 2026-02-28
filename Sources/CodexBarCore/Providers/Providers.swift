@@ -1,29 +1,33 @@
 import Foundation
-import SweetCookieKit
 
 // swiftformat:disable sortDeclarations
-public enum UsageProvider: String, CaseIterable, Sendable, Codable {
+public enum UsageProvider: String, Sendable, Codable, CaseIterable {
     case codex
     case claude
+    // Legacy compatibility cases kept to avoid touching unrelated UI/CLI rendering code.
+    case gemini
+    case antigravity
     case cursor
     case opencode
     case factory
-    case gemini
-    case antigravity
     case copilot
-    case zai
-    case minimax
-    case kimi
-    case kiro
     case vertexai
-    case augment
-    case jetbrains
+    case kiro
+    case kimi
     case kimik2
+    case jetbrains
+    case zai
+    case synthetic
+    case openrouter
+    case warp
+    case minimax
+    case augment
     case amp
     case ollama
-    case synthetic
-    case warp
-    case openrouter
+
+    public static var allCases: [UsageProvider] {
+        [.codex, .claude]
+    }
 }
 
 // swiftformat:enable sortDeclarations
@@ -31,26 +35,27 @@ public enum UsageProvider: String, CaseIterable, Sendable, Codable {
 public enum IconStyle: Sendable, CaseIterable {
     case codex
     case claude
-    case zai
-    case minimax
+    case combined
+    // Legacy compatibility icon styles.
     case gemini
     case antigravity
     case cursor
     case opencode
     case factory
     case copilot
+    case vertexai
+    case kiro
     case kimi
     case kimik2
-    case kiro
-    case vertexai
-    case augment
     case jetbrains
+    case zai
+    case synthetic
+    case openrouter
+    case warp
+    case minimax
+    case augment
     case amp
     case ollama
-    case synthetic
-    case warp
-    case openrouter
-    case combined
 }
 
 public struct ProviderMetadata: Sendable {
@@ -128,10 +133,6 @@ public enum ProviderDefaults {
 
 public enum ProviderBrowserCookieDefaults {
     public static var defaultImportOrder: BrowserCookieImportOrder? {
-        #if os(macOS)
-        Browser.defaultImportOrder
-        #else
         nil
-        #endif
     }
 }

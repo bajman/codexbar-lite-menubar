@@ -14,130 +14,98 @@ public struct ProviderTokenResolution: Sendable {
     }
 }
 
+/// Legacy compatibility shim.
+/// Lite mode no longer resolves per-provider API/cookie tokens from config.
 public enum ProviderTokenResolver {
-    public static func zaiToken(environment: [String: String] = ProcessInfo.processInfo.environment) -> String? {
-        self.zaiResolution(environment: environment)?.token
+    public static func zaiToken(environment _: [String: String] = ProcessInfo.processInfo.environment) -> String? {
+        nil
     }
 
-    public static func syntheticToken(
-        environment: [String: String] = ProcessInfo.processInfo.environment) -> String?
+    public static func syntheticToken(environment _: [String: String] = ProcessInfo.processInfo.environment) -> String? {
+        nil
+    }
+
+    public static func copilotToken(environment _: [String: String] = ProcessInfo.processInfo.environment) -> String? {
+        nil
+    }
+
+    public static func minimaxToken(environment _: [String: String] = ProcessInfo.processInfo.environment) -> String? {
+        nil
+    }
+
+    public static func minimaxCookie(environment _: [String: String] = ProcessInfo.processInfo.environment) -> String? {
+        nil
+    }
+
+    public static func kimiAuthToken(environment _: [String: String] = ProcessInfo.processInfo.environment) -> String? {
+        nil
+    }
+
+    public static func kimiK2Token(environment _: [String: String] = ProcessInfo.processInfo.environment) -> String? {
+        nil
+    }
+
+    public static func warpToken(environment _: [String: String] = ProcessInfo.processInfo.environment) -> String? {
+        nil
+    }
+
+    public static func openRouterToken(
+        environment _: [String: String] = ProcessInfo.processInfo.environment) -> String?
     {
-        self.syntheticResolution(environment: environment)?.token
-    }
-
-    public static func copilotToken(environment: [String: String] = ProcessInfo.processInfo.environment) -> String? {
-        self.copilotResolution(environment: environment)?.token
-    }
-
-    public static func minimaxToken(environment: [String: String] = ProcessInfo.processInfo.environment) -> String? {
-        self.minimaxTokenResolution(environment: environment)?.token
-    }
-
-    public static func minimaxCookie(environment: [String: String] = ProcessInfo.processInfo.environment) -> String? {
-        self.minimaxCookieResolution(environment: environment)?.token
-    }
-
-    public static func kimiAuthToken(environment: [String: String] = ProcessInfo.processInfo.environment) -> String? {
-        self.kimiAuthResolution(environment: environment)?.token
-    }
-
-    public static func kimiK2Token(environment: [String: String] = ProcessInfo.processInfo.environment) -> String? {
-        self.kimiK2Resolution(environment: environment)?.token
-    }
-
-    public static func warpToken(environment: [String: String] = ProcessInfo.processInfo.environment) -> String? {
-        self.warpResolution(environment: environment)?.token
-    }
-
-    public static func openRouterToken(environment: [String: String] = ProcessInfo.processInfo.environment) -> String? {
-        self.openRouterResolution(environment: environment)?.token
+        nil
     }
 
     public static func zaiResolution(
-        environment: [String: String] = ProcessInfo.processInfo.environment) -> ProviderTokenResolution?
+        environment _: [String: String] = ProcessInfo.processInfo.environment) -> ProviderTokenResolution?
     {
-        self.resolveEnv(ZaiSettingsReader.apiToken(environment: environment))
+        nil
     }
 
     public static func syntheticResolution(
-        environment: [String: String] = ProcessInfo.processInfo.environment) -> ProviderTokenResolution?
+        environment _: [String: String] = ProcessInfo.processInfo.environment) -> ProviderTokenResolution?
     {
-        self.resolveEnv(SyntheticSettingsReader.apiKey(environment: environment))
+        nil
     }
 
     public static func copilotResolution(
-        environment: [String: String] = ProcessInfo.processInfo.environment) -> ProviderTokenResolution?
+        environment _: [String: String] = ProcessInfo.processInfo.environment) -> ProviderTokenResolution?
     {
-        self.resolveEnv(self.cleaned(environment["COPILOT_API_TOKEN"]))
+        nil
     }
 
     public static func minimaxTokenResolution(
-        environment: [String: String] = ProcessInfo.processInfo.environment) -> ProviderTokenResolution?
+        environment _: [String: String] = ProcessInfo.processInfo.environment) -> ProviderTokenResolution?
     {
-        self.resolveEnv(MiniMaxAPISettingsReader.apiToken(environment: environment))
+        nil
     }
 
     public static func minimaxCookieResolution(
-        environment: [String: String] = ProcessInfo.processInfo.environment) -> ProviderTokenResolution?
+        environment _: [String: String] = ProcessInfo.processInfo.environment) -> ProviderTokenResolution?
     {
-        self.resolveEnv(MiniMaxSettingsReader.cookieHeader(environment: environment))
+        nil
     }
 
     public static func kimiAuthResolution(
-        environment: [String: String] = ProcessInfo.processInfo.environment) -> ProviderTokenResolution?
+        environment _: [String: String] = ProcessInfo.processInfo.environment) -> ProviderTokenResolution?
     {
-        if let resolution = self.resolveEnv(KimiSettingsReader.authToken(environment: environment)) {
-            return resolution
-        }
-        #if os(macOS)
-        do {
-            let session = try KimiCookieImporter.importSession()
-            if let token = session.authToken {
-                return ProviderTokenResolution(token: token, source: .environment)
-            }
-        } catch {
-            // No browser cookies found, continue to fallback
-        }
-        #endif
-        return nil
+        nil
     }
 
     public static func kimiK2Resolution(
-        environment: [String: String] = ProcessInfo.processInfo.environment) -> ProviderTokenResolution?
+        environment _: [String: String] = ProcessInfo.processInfo.environment) -> ProviderTokenResolution?
     {
-        self.resolveEnv(KimiK2SettingsReader.apiKey(environment: environment))
+        nil
     }
 
     public static func warpResolution(
-        environment: [String: String] = ProcessInfo.processInfo.environment) -> ProviderTokenResolution?
+        environment _: [String: String] = ProcessInfo.processInfo.environment) -> ProviderTokenResolution?
     {
-        self.resolveEnv(WarpSettingsReader.apiKey(environment: environment))
+        nil
     }
 
     public static func openRouterResolution(
-        environment: [String: String] = ProcessInfo.processInfo.environment) -> ProviderTokenResolution?
+        environment _: [String: String] = ProcessInfo.processInfo.environment) -> ProviderTokenResolution?
     {
-        self.resolveEnv(OpenRouterSettingsReader.apiToken(environment: environment))
-    }
-
-    private static func cleaned(_ raw: String?) -> String? {
-        guard var value = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
-            return nil
-        }
-
-        if (value.hasPrefix("\"") && value.hasSuffix("\"")) ||
-            (value.hasPrefix("'") && value.hasSuffix("'"))
-        {
-            value.removeFirst()
-            value.removeLast()
-        }
-
-        value = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty ? nil : value
-    }
-
-    private static func resolveEnv(_ token: String?) -> ProviderTokenResolution? {
-        guard let token else { return nil }
-        return ProviderTokenResolution(token: token, source: .environment)
+        nil
     }
 }

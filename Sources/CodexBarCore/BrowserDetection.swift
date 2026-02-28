@@ -1,7 +1,6 @@
 import Foundation
 #if os(macOS)
 import os.lock
-import SweetCookieKit
 
 /// Browser presence + profile heuristics.
 ///

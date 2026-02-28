@@ -222,8 +222,11 @@ extension SettingsStore {
     }
 
     var claudeWebExtrasEnabled: Bool {
-        get { self.claudeWebExtrasEnabledRaw }
-        set { self.claudeWebExtrasEnabledRaw = newValue }
+        get { false }
+        set {
+            _ = newValue
+            self.claudeWebExtrasEnabledRaw = false
+        }
     }
 
     private var claudeWebExtrasEnabledRaw: Bool {
@@ -246,13 +249,14 @@ extension SettingsStore {
     }
 
     var openAIWebAccessEnabled: Bool {
-        get { self.defaultsState.openAIWebAccessEnabled }
+        get { false }
         set {
-            self.defaultsState.openAIWebAccessEnabled = newValue
-            self.userDefaults.set(newValue, forKey: "openAIWebAccessEnabled")
+            _ = newValue
+            self.defaultsState.openAIWebAccessEnabled = false
+            self.userDefaults.set(false, forKey: "openAIWebAccessEnabled")
             CodexBarLog.logger(LogCategories.settings).info(
                 "OpenAI web access updated",
-                metadata: ["enabled": newValue ? "1" : "0"])
+                metadata: ["enabled": "0"])
         }
     }
 

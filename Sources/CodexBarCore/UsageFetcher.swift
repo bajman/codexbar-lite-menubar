@@ -4,7 +4,6 @@ public struct RateWindow: Codable, Equatable, Sendable {
     public let usedPercent: Double
     public let windowMinutes: Int?
     public let resetsAt: Date?
-    /// Optional textual reset description (used by Claude CLI UI scrape).
     public let resetDescription: String?
 
     public init(usedPercent: Double, windowMinutes: Int?, resetsAt: Date?, resetDescription: String?) {
@@ -52,10 +51,6 @@ public struct UsageSnapshot: Codable, Sendable {
     public let secondary: RateWindow?
     public let tertiary: RateWindow?
     public let providerCost: ProviderCostSnapshot?
-    public let zaiUsage: ZaiUsageSnapshot?
-    public let minimaxUsage: MiniMaxUsageSnapshot?
-    public let openRouterUsage: OpenRouterUsageSnapshot?
-    public let cursorRequests: CursorRequestUsage?
     public let updatedAt: Date
     public let identity: ProviderIdentitySnapshot?
 
@@ -64,7 +59,6 @@ public struct UsageSnapshot: Codable, Sendable {
         case secondary
         case tertiary
         case providerCost
-        case openRouterUsage
         case updatedAt
         case identity
         case accountEmail
@@ -77,10 +71,6 @@ public struct UsageSnapshot: Codable, Sendable {
         secondary: RateWindow?,
         tertiary: RateWindow? = nil,
         providerCost: ProviderCostSnapshot? = nil,
-        zaiUsage: ZaiUsageSnapshot? = nil,
-        minimaxUsage: MiniMaxUsageSnapshot? = nil,
-        openRouterUsage: OpenRouterUsageSnapshot? = nil,
-        cursorRequests: CursorRequestUsage? = nil,
         updatedAt: Date,
         identity: ProviderIdentitySnapshot? = nil)
     {
@@ -88,10 +78,6 @@ public struct UsageSnapshot: Codable, Sendable {
         self.secondary = secondary
         self.tertiary = tertiary
         self.providerCost = providerCost
-        self.zaiUsage = zaiUsage
-        self.minimaxUsage = minimaxUsage
-        self.openRouterUsage = openRouterUsage
-        self.cursorRequests = cursorRequests
         self.updatedAt = updatedAt
         self.identity = identity
     }
@@ -102,10 +88,6 @@ public struct UsageSnapshot: Codable, Sendable {
         self.secondary = try container.decodeIfPresent(RateWindow.self, forKey: .secondary)
         self.tertiary = try container.decodeIfPresent(RateWindow.self, forKey: .tertiary)
         self.providerCost = try container.decodeIfPresent(ProviderCostSnapshot.self, forKey: .providerCost)
-        self.zaiUsage = nil // Not persisted, fetched fresh each time
-        self.minimaxUsage = nil // Not persisted, fetched fresh each time
-        self.openRouterUsage = try container.decodeIfPresent(OpenRouterUsageSnapshot.self, forKey: .openRouterUsage)
-        self.cursorRequests = nil // Not persisted, fetched fresh each time
         self.updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         if let identity = try container.decodeIfPresent(ProviderIdentitySnapshot.self, forKey: .identity) {
             self.identity = identity
@@ -127,12 +109,10 @@ public struct UsageSnapshot: Codable, Sendable {
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        // Stable JSON schema: keep window keys present (encode `nil` as `null`).
         try container.encode(self.primary, forKey: .primary)
         try container.encode(self.secondary, forKey: .secondary)
         try container.encode(self.tertiary, forKey: .tertiary)
         try container.encodeIfPresent(self.providerCost, forKey: .providerCost)
-        try container.encodeIfPresent(self.openRouterUsage, forKey: .openRouterUsage)
         try container.encode(self.updatedAt, forKey: .updatedAt)
         try container.encodeIfPresent(self.identity, forKey: .identity)
         try container.encodeIfPresent(self.identity?.accountEmail, forKey: .accountEmail)
@@ -145,25 +125,8 @@ public struct UsageSnapshot: Codable, Sendable {
         return identity
     }
 
-    public func switcherWeeklyWindow(for provider: UsageProvider, showUsed: Bool) -> RateWindow? {
-        switch provider {
-        case .factory:
-            // Factory prefers secondary window
-            return self.secondary ?? self.primary
-        case .cursor:
-            // Cursor: fall back to On-Demand when Plan is exhausted (only in "show remaining" mode).
-            // In "show used" mode, keep showing primary so 100% used Plan is visible.
-            if !showUsed,
-               let primary = self.primary,
-               primary.remainingPercent <= 0,
-               let secondary = self.secondary
-            {
-                return secondary
-            }
-            return self.primary ?? self.secondary
-        default:
-            return self.primary ?? self.secondary
-        }
+    public func switcherWeeklyWindow(for _: UsageProvider, showUsed _: Bool) -> RateWindow? {
+        self.primary ?? self.secondary
     }
 
     public func accountEmail(for provider: UsageProvider) -> String? {
@@ -178,17 +141,12 @@ public struct UsageSnapshot: Codable, Sendable {
         self.identity(for: provider)?.loginMethod
     }
 
-    /// Keep this initializer-style copy in sync with UsageSnapshot fields so relabeling/scoping never drops data.
     public func withIdentity(_ identity: ProviderIdentitySnapshot?) -> UsageSnapshot {
         UsageSnapshot(
             primary: self.primary,
             secondary: self.secondary,
             tertiary: self.tertiary,
             providerCost: self.providerCost,
-            zaiUsage: self.zaiUsage,
-            minimaxUsage: self.minimaxUsage,
-            openRouterUsage: self.openRouterUsage,
-            cursorRequests: self.cursorRequests,
             updatedAt: self.updatedAt,
             identity: identity)
     }
@@ -221,423 +179,52 @@ public enum UsageError: LocalizedError, Sendable {
         case .noSessions:
             "No Codex sessions found yet. Run at least one Codex prompt first."
         case .noRateLimitsFound:
-            "Found sessions, but no rate limit events yet."
+            "No Codex usage limits were returned by the OAuth endpoint."
         case .decodeFailed:
-            "Could not parse Codex session log."
+            "Could not parse Codex usage data."
         }
     }
 }
-
-// MARK: - Codex RPC client (local process)
-
-private struct RPCAccountResponse: Decodable {
-    let account: RPCAccountDetails?
-    let requiresOpenaiAuth: Bool?
-}
-
-private enum RPCAccountDetails: Decodable {
-    case apiKey
-    case chatgpt(email: String, planType: String)
-
-    enum CodingKeys: String, CodingKey {
-        case type
-        case email
-        case planType
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let type = try container.decode(String.self, forKey: .type)
-        switch type.lowercased() {
-        case "apikey":
-            self = .apiKey
-        case "chatgpt":
-            let email = try container.decodeIfPresent(String.self, forKey: .email) ?? "unknown"
-            let plan = try container.decodeIfPresent(String.self, forKey: .planType) ?? "unknown"
-            self = .chatgpt(email: email, planType: plan)
-        default:
-            throw DecodingError.dataCorruptedError(
-                forKey: .type,
-                in: container,
-                debugDescription: "Unknown account type \(type)")
-        }
-    }
-}
-
-private struct RPCRateLimitsResponse: Decodable, Encodable {
-    let rateLimits: RPCRateLimitSnapshot
-}
-
-private struct RPCRateLimitSnapshot: Decodable, Encodable {
-    let primary: RPCRateLimitWindow?
-    let secondary: RPCRateLimitWindow?
-    let credits: RPCCreditsSnapshot?
-}
-
-private struct RPCRateLimitWindow: Decodable, Encodable {
-    let usedPercent: Double
-    let windowDurationMins: Int?
-    let resetsAt: Int?
-}
-
-private struct RPCCreditsSnapshot: Decodable, Encodable {
-    let hasCredits: Bool
-    let unlimited: Bool
-    let balance: String?
-}
-
-private enum RPCWireError: Error, LocalizedError {
-    case startFailed(String)
-    case requestFailed(String)
-    case malformed(String)
-
-    var errorDescription: String? {
-        switch self {
-        case let .startFailed(message):
-            "Codex not running. Try running a Codex command first. (\(message))"
-        case let .requestFailed(message):
-            "Codex connection failed: \(message)"
-        case let .malformed(message):
-            "Codex returned invalid data: \(message)"
-        }
-    }
-}
-
-/// RPC helper used on background tasks; safe because we confine it to the owning task.
-private final class CodexRPCClient: @unchecked Sendable {
-    private static let log = CodexBarLog.logger(LogCategories.codexRPC)
-    private let process = Process()
-    private let stdinPipe = Pipe()
-    private let stdoutPipe = Pipe()
-    private let stderrPipe = Pipe()
-    private let stdoutLineStream: AsyncStream<Data>
-    private let stdoutLineContinuation: AsyncStream<Data>.Continuation
-    private var nextID = 1
-
-    private final class LineBuffer: @unchecked Sendable {
-        private let lock = NSLock()
-        private var buffer = Data()
-
-        func appendAndDrainLines(_ data: Data) -> [Data] {
-            self.lock.lock()
-            defer { self.lock.unlock() }
-
-            self.buffer.append(data)
-            var out: [Data] = []
-            while let newline = self.buffer.firstIndex(of: 0x0A) {
-                let lineData = Data(self.buffer[..<newline])
-                self.buffer.removeSubrange(...newline)
-                if !lineData.isEmpty {
-                    out.append(lineData)
-                }
-            }
-            return out
-        }
-    }
-
-    private static func debugWriteStderr(_ message: String) {
-        #if !os(Linux)
-        fputs(message, stderr)
-        #endif
-    }
-
-    init(
-        executable: String = "codex",
-        arguments: [String] = ["-s", "read-only", "-a", "untrusted", "app-server"]) throws
-    {
-        var stdoutContinuation: AsyncStream<Data>.Continuation!
-        self.stdoutLineStream = AsyncStream<Data> { continuation in
-            stdoutContinuation = continuation
-        }
-        self.stdoutLineContinuation = stdoutContinuation
-
-        let resolvedExec = BinaryLocator.resolveCodexBinary()
-            ?? TTYCommandRunner.which(executable)
-
-        guard let resolvedExec else {
-            Self.log.warning("Codex RPC binary not found", metadata: ["binary": executable])
-            throw RPCWireError.startFailed(
-                "Codex CLI not found. Install with `npm i -g @openai/codex` (or bun) then relaunch CodexBar.")
-        }
-        var env = ProcessInfo.processInfo.environment
-        env["PATH"] = PathBuilder.effectivePATH(
-            purposes: [.rpc, .nodeTooling],
-            env: env)
-
-        self.process.environment = env
-        self.process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        self.process.arguments = [resolvedExec] + arguments
-        self.process.standardInput = self.stdinPipe
-        self.process.standardOutput = self.stdoutPipe
-        self.process.standardError = self.stderrPipe
-
-        do {
-            try self.process.run()
-            Self.log.debug("Codex RPC started", metadata: ["binary": resolvedExec])
-        } catch {
-            Self.log.warning("Codex RPC failed to start", metadata: ["error": error.localizedDescription])
-            throw RPCWireError.startFailed(error.localizedDescription)
-        }
-
-        let stdoutHandle = self.stdoutPipe.fileHandleForReading
-        let stdoutLineContinuation = self.stdoutLineContinuation
-        let stdoutBuffer = LineBuffer()
-        stdoutHandle.readabilityHandler = { handle in
-            let data = handle.availableData
-            if data.isEmpty {
-                handle.readabilityHandler = nil
-                stdoutLineContinuation.finish()
-                return
-            }
-
-            let lines = stdoutBuffer.appendAndDrainLines(data)
-
-            for lineData in lines {
-                stdoutLineContinuation.yield(lineData)
-            }
-        }
-
-        let stderrHandle = self.stderrPipe.fileHandleForReading
-        stderrHandle.readabilityHandler = { handle in
-            let data = handle.availableData
-            // When the child closes stderr, availableData returns empty and will keep re-firing; clear the handler
-            // to avoid a busy read loop on the file-descriptor monitoring queue.
-            if data.isEmpty {
-                handle.readabilityHandler = nil
-                return
-            }
-            guard let text = String(data: data, encoding: .utf8), !text.isEmpty else { return }
-            for line in text.split(whereSeparator: \.isNewline) {
-                Self.debugWriteStderr("[codex stderr] \(line)\n")
-            }
-        }
-    }
-
-    func initialize(clientName: String, clientVersion: String) async throws {
-        _ = try await self.request(
-            method: "initialize",
-            params: ["clientInfo": ["name": clientName, "version": clientVersion]])
-        try self.sendNotification(method: "initialized")
-    }
-
-    func fetchAccount() async throws -> RPCAccountResponse {
-        let message = try await self.request(method: "account/read")
-        return try self.decodeResult(from: message)
-    }
-
-    func fetchRateLimits() async throws -> RPCRateLimitsResponse {
-        let message = try await self.request(method: "account/rateLimits/read")
-        return try self.decodeResult(from: message)
-    }
-
-    func shutdown() {
-        if self.process.isRunning {
-            Self.log.debug("Codex RPC stopping")
-            self.process.terminate()
-        }
-    }
-
-    // MARK: - JSON-RPC helpers
-
-    private func request(method: String, params: [String: Any]? = nil) async throws -> [String: Any] {
-        let id = self.nextID
-        self.nextID += 1
-        try self.sendRequest(id: id, method: method, params: params)
-
-        while true {
-            let message = try await self.readNextMessage()
-
-            if message["id"] == nil, let methodName = message["method"] as? String {
-                Self.debugWriteStderr("[codex notify] \(methodName)\n")
-                continue
-            }
-
-            guard let messageID = self.jsonID(message["id"]), messageID == id else { continue }
-
-            if let error = message["error"] as? [String: Any], let messageText = error["message"] as? String {
-                throw RPCWireError.requestFailed(messageText)
-            }
-
-            return message
-        }
-    }
-
-    private func sendNotification(method: String, params: [String: Any]? = nil) throws {
-        let paramsValue: Any = params ?? [:]
-        try self.sendPayload(["method": method, "params": paramsValue])
-    }
-
-    private func sendRequest(id: Int, method: String, params: [String: Any]?) throws {
-        let paramsValue: Any = params ?? [:]
-        let payload: [String: Any] = ["id": id, "method": method, "params": paramsValue]
-        try self.sendPayload(payload)
-    }
-
-    private func sendPayload(_ payload: [String: Any]) throws {
-        let data = try JSONSerialization.data(withJSONObject: payload)
-        self.stdinPipe.fileHandleForWriting.write(data)
-        self.stdinPipe.fileHandleForWriting.write(Data([0x0A]))
-    }
-
-    private func readNextMessage() async throws -> [String: Any] {
-        for await lineData in self.stdoutLineStream {
-            if lineData.isEmpty { continue }
-            if let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] {
-                return json
-            }
-        }
-        throw RPCWireError.malformed("codex app-server closed stdout")
-    }
-
-    private func decodeResult<T: Decodable>(from message: [String: Any]) throws -> T {
-        guard let result = message["result"] else {
-            throw RPCWireError.malformed("missing result field")
-        }
-        let data = try JSONSerialization.data(withJSONObject: result)
-        let decoder = JSONDecoder()
-        return try decoder.decode(T.self, from: data)
-    }
-
-    private func jsonID(_ value: Any?) -> Int? {
-        switch value {
-        case let int as Int:
-            int
-        case let number as NSNumber:
-            number.intValue
-        default:
-            nil
-        }
-    }
-}
-
-// MARK: - Public fetcher used by the app
 
 public struct UsageFetcher: Sendable {
     private let environment: [String: String]
 
     public init(environment: [String: String] = ProcessInfo.processInfo.environment) {
         self.environment = environment
-        LoginShellPathCache.shared.captureOnce()
     }
 
-    public func loadLatestUsage(keepCLISessionsAlive: Bool = false) async throws -> UsageSnapshot {
-        try await self.withFallback(
-            primary: self.loadRPCUsage,
-            secondary: { try await self.loadTTYUsage(keepCLISessionsAlive: keepCLISessionsAlive) })
+    public func loadLatestUsage(keepCLISessionsAlive _: Bool = false) async throws -> UsageSnapshot {
+        let credentials = try CodexOAuthCredentialsStore.load()
+        let response = try await CodexOAuthUsageFetcher.fetchUsage(
+            accessToken: credentials.accessToken,
+            accountId: credentials.accountId)
+        return Self.mapUsage(response: response, credentials: credentials)
     }
 
-    private func loadRPCUsage() async throws -> UsageSnapshot {
-        let rpc = try CodexRPCClient()
-        defer { rpc.shutdown() }
-
-        try await rpc.initialize(clientName: "codexbar", clientVersion: "0.5.4")
-        // The app-server answers on a single stdout stream, so keep requests
-        // serialized to avoid starving one reader when multiple awaiters race
-        // for the same pipe.
-        let limits = try await rpc.fetchRateLimits().rateLimits
-        let account = try? await rpc.fetchAccount()
-
-        guard let primary = Self.makeWindow(from: limits.primary),
-              let secondary = Self.makeWindow(from: limits.secondary)
-        else {
+    public func loadLatestCredits(keepCLISessionsAlive _: Bool = false) async throws -> CreditsSnapshot {
+        let credentials = try CodexOAuthCredentialsStore.load()
+        let response = try await CodexOAuthUsageFetcher.fetchUsage(
+            accessToken: credentials.accessToken,
+            accountId: credentials.accountId)
+        guard let credits = response.credits, let balance = credits.balance else {
             throw UsageError.noRateLimitsFound
         }
-
-        let identity = ProviderIdentitySnapshot(
-            providerID: .codex,
-            accountEmail: account?.account.flatMap { details in
-                if case let .chatgpt(email, _) = details { email } else { nil }
-            },
-            accountOrganization: nil,
-            loginMethod: account?.account.flatMap { details in
-                if case let .chatgpt(_, plan) = details { plan } else { nil }
-            })
-        return UsageSnapshot(
-            primary: primary,
-            secondary: secondary,
-            tertiary: nil,
-            updatedAt: Date(),
-            identity: identity)
-    }
-
-    private func loadTTYUsage(keepCLISessionsAlive: Bool) async throws -> UsageSnapshot {
-        let status = try await CodexStatusProbe(keepCLISessionsAlive: keepCLISessionsAlive).fetch()
-        guard let fiveLeft = status.fiveHourPercentLeft, let weekLeft = status.weeklyPercentLeft else {
-            throw UsageError.noRateLimitsFound
-        }
-
-        let primary = RateWindow(
-            usedPercent: max(0, 100 - Double(fiveLeft)),
-            windowMinutes: 300,
-            resetsAt: nil,
-            resetDescription: status.fiveHourResetDescription)
-        let secondary = RateWindow(
-            usedPercent: max(0, 100 - Double(weekLeft)),
-            windowMinutes: 10080,
-            resetsAt: nil,
-            resetDescription: status.weeklyResetDescription)
-
-        return UsageSnapshot(
-            primary: primary,
-            secondary: secondary,
-            tertiary: nil,
-            updatedAt: Date(),
-            identity: nil)
-    }
-
-    public func loadLatestCredits(keepCLISessionsAlive: Bool = false) async throws -> CreditsSnapshot {
-        try await self.withFallback(
-            primary: self.loadRPCCredits,
-            secondary: { try await self.loadTTYCredits(keepCLISessionsAlive: keepCLISessionsAlive) })
-    }
-
-    private func loadRPCCredits() async throws -> CreditsSnapshot {
-        let rpc = try CodexRPCClient()
-        defer { rpc.shutdown() }
-        try await rpc.initialize(clientName: "codexbar", clientVersion: "0.5.4")
-        let limits = try await rpc.fetchRateLimits().rateLimits
-        guard let credits = limits.credits else { throw UsageError.noRateLimitsFound }
-        let remaining = Self.parseCredits(credits.balance)
-        return CreditsSnapshot(remaining: remaining, events: [], updatedAt: Date())
-    }
-
-    private func loadTTYCredits(keepCLISessionsAlive: Bool) async throws -> CreditsSnapshot {
-        let status = try await CodexStatusProbe(keepCLISessionsAlive: keepCLISessionsAlive).fetch()
-        guard let credits = status.credits else { throw UsageError.noRateLimitsFound }
-        return CreditsSnapshot(remaining: credits, events: [], updatedAt: Date())
-    }
-
-    private func withFallback<T>(
-        primary: @escaping () async throws -> T,
-        secondary: @escaping () async throws -> T) async throws -> T
-    {
-        do {
-            return try await primary()
-        } catch let primaryError {
-            do {
-                return try await secondary()
-            } catch {
-                // Preserve the original failure so callers see the primary path error.
-                throw primaryError
-            }
-        }
+        return CreditsSnapshot(remaining: balance, events: [], updatedAt: Date())
     }
 
     public func debugRawRateLimits() async -> String {
         do {
-            let rpc = try CodexRPCClient()
-            defer { rpc.shutdown() }
-            try await rpc.initialize(clientName: "codexbar", clientVersion: "0.5.4")
-            let limits = try await rpc.fetchRateLimits()
-            let data = try JSONEncoder().encode(limits)
-            return String(data: data, encoding: .utf8) ?? "<unprintable>"
+            let credentials = try CodexOAuthCredentialsStore.load()
+            let response = try await CodexOAuthUsageFetcher.fetchUsage(
+                accessToken: credentials.accessToken,
+                accountId: credentials.accountId)
+            return String(describing: response)
         } catch {
-            return "Codex RPC probe failed: \(error)"
+            return "Codex OAuth usage fetch failed: \(error)"
         }
     }
 
     public func loadAccountInfo() -> AccountInfo {
-        // Keep using auth.json for quick startup (non-blocking, no RPC spin-up required).
         let authURL = URL(fileURLWithPath: self.environment["CODEX_HOME"] ?? "\(NSHomeDirectory())/.codex")
             .appendingPathComponent("auth.json")
         guard let data = try? Data(contentsOf: authURL),
@@ -663,24 +250,6 @@ public struct UsageFetcher: Sendable {
         return AccountInfo(email: email, plan: plan)
     }
 
-    // MARK: - Helpers
-
-    private static func makeWindow(from rpc: RPCRateLimitWindow?) -> RateWindow? {
-        guard let rpc else { return nil }
-        let resetsAtDate = rpc.resetsAt.map { Date(timeIntervalSince1970: TimeInterval($0)) }
-        let resetDescription = resetsAtDate.map { UsageFormatter.resetDescription(from: $0) }
-        return RateWindow(
-            usedPercent: rpc.usedPercent,
-            windowMinutes: rpc.windowDurationMins,
-            resetsAt: resetsAtDate,
-            resetDescription: resetDescription)
-    }
-
-    private static func parseCredits(_ balance: String?) -> Double {
-        guard let balance, let val = Double(balance) else { return 0 }
-        return val
-    }
-
     public static func parseJWT(_ token: String) -> [String: Any]? {
         let parts = token.split(separator: ".")
         guard parts.count >= 2 else { return nil }
@@ -696,9 +265,61 @@ public struct UsageFetcher: Sendable {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         return json
     }
+
+    private static func mapUsage(response: CodexUsageResponse, credentials: CodexOAuthCredentials) -> UsageSnapshot {
+        let primary = Self.makeWindow(response.rateLimit?.primaryWindow)
+        let secondary = Self.makeWindow(response.rateLimit?.secondaryWindow)
+
+        let identity = ProviderIdentitySnapshot(
+            providerID: .codex,
+            accountEmail: Self.resolveAccountEmail(from: credentials),
+            accountOrganization: nil,
+            loginMethod: Self.resolvePlan(response: response, credentials: credentials))
+
+        return UsageSnapshot(
+            primary: primary ?? RateWindow(usedPercent: 0, windowMinutes: nil, resetsAt: nil, resetDescription: nil),
+            secondary: secondary,
+            tertiary: nil,
+            updatedAt: Date(),
+            identity: identity)
+    }
+
+    private static func makeWindow(_ window: CodexUsageResponse.WindowSnapshot?) -> RateWindow? {
+        guard let window else { return nil }
+        let resetDate = Date(timeIntervalSince1970: TimeInterval(window.resetAt))
+        let resetDescription = UsageFormatter.resetDescription(from: resetDate)
+        return RateWindow(
+            usedPercent: Double(window.usedPercent),
+            windowMinutes: window.limitWindowSeconds / 60,
+            resetsAt: resetDate,
+            resetDescription: resetDescription)
+    }
+
+    private static func resolveAccountEmail(from credentials: CodexOAuthCredentials) -> String? {
+        guard let idToken = credentials.idToken,
+              let payload = UsageFetcher.parseJWT(idToken)
+        else {
+            return nil
+        }
+
+        let profileDict = payload["https://api.openai.com/profile"] as? [String: Any]
+        let email = (payload["email"] as? String) ?? (profileDict?["email"] as? String)
+        return email?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func resolvePlan(response: CodexUsageResponse, credentials: CodexOAuthCredentials) -> String? {
+        if let plan = response.planType?.rawValue, !plan.isEmpty { return plan }
+        guard let idToken = credentials.idToken,
+              let payload = UsageFetcher.parseJWT(idToken)
+        else {
+            return nil
+        }
+        let authDict = payload["https://api.openai.com/auth"] as? [String: Any]
+        let plan = (authDict?["chatgpt_plan_type"] as? String) ?? (payload["chatgpt_plan_type"] as? String)
+        return plan?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 }
 
-/// Minimal auth.json struct preserved from previous implementation
 private struct AuthFile: Decodable {
     struct Tokens: Decodable { let idToken: String? }
     let tokens: Tokens?

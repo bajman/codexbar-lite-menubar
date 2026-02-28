@@ -105,7 +105,21 @@ public enum WidgetSnapshotStore {
     public static func load(bundleID: String? = Bundle.main.bundleIdentifier) -> WidgetSnapshot? {
         guard let url = self.snapshotURL(bundleID: bundleID) else { return nil }
         guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? self.decoder.decode(WidgetSnapshot.self, from: data)
+        guard let decoded = try? self.decoder.decode(WidgetSnapshot.self, from: data) else {
+            // Stale/unknown snapshot schema: treat as cache miss.
+            try? FileManager.default.removeItem(at: url)
+            return nil
+        }
+        let sanitized = self.sanitize(decoded)
+        let decodedProviders = Set(decoded.entries.map(\.provider))
+        let sanitizedProviders = Set(sanitized.entries.map(\.provider))
+        let changed = decodedProviders != sanitizedProviders ||
+            decoded.entries.count != sanitized.entries.count ||
+            decoded.enabledProviders != sanitized.enabledProviders
+        if changed {
+            self.save(sanitized, bundleID: bundleID)
+        }
+        return sanitized
     }
 
     public static func save(_ snapshot: WidgetSnapshot, bundleID: String? = Bundle.main.bundleIdentifier) {
@@ -157,7 +171,25 @@ public enum WidgetSnapshotStore {
         decoder.dateDecodingStrategy = .iso8601
         return decoder
     }
+
+    private static func sanitize(_ snapshot: WidgetSnapshot) -> WidgetSnapshot {
+        let supported: Set<UsageProvider> = [.codex, .claude]
+        let entries = snapshot.entries.filter { supported.contains($0.provider) }
+        let enabled = snapshot.enabledProviders.filter { supported.contains($0) }
+        return WidgetSnapshot(
+            entries: entries,
+            enabledProviders: enabled.isEmpty ? entries.map(\.provider) : enabled,
+            generatedAt: snapshot.generatedAt)
+    }
 }
+
+#if DEBUG
+extension WidgetSnapshotStore {
+    public static func _sanitizeForTesting(_ snapshot: WidgetSnapshot) -> WidgetSnapshot {
+        self.sanitize(snapshot)
+    }
+}
+#endif
 
 public enum WidgetSelectionStore {
     private static let selectedProviderKey = "widgetSelectedProvider"
@@ -165,7 +197,11 @@ public enum WidgetSelectionStore {
     public static func loadSelectedProvider(bundleID: String? = Bundle.main.bundleIdentifier) -> UsageProvider? {
         guard let defaults = self.sharedDefaults(bundleID: bundleID) else { return nil }
         guard let raw = defaults.string(forKey: self.selectedProviderKey) else { return nil }
-        return UsageProvider(rawValue: raw)
+        guard let provider = UsageProvider(rawValue: raw), provider == .codex || provider == .claude else {
+            defaults.removeObject(forKey: self.selectedProviderKey)
+            return nil
+        }
+        return provider
     }
 
     public static func saveSelectedProvider(

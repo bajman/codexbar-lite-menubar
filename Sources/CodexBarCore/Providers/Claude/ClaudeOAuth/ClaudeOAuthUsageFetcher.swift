@@ -12,7 +12,7 @@ public enum ClaudeOAuthFetchError: LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .unauthorized:
-            return "Claude OAuth request unauthorized. Run `claude` to re-authenticate."
+            return "Claude token expired or invalid. Run `claude login` to re-authenticate."
         case .invalidResponse:
             return "Claude OAuth response was invalid."
         case let .serverError(code, body):
@@ -58,11 +58,8 @@ enum ClaudeOAuthUsageFetcher {
             switch http.statusCode {
             case 200:
                 return try Self.decodeUsageResponse(data)
-            case 401:
+            case 401, 403:
                 throw ClaudeOAuthFetchError.unauthorized
-            case 403:
-                let body = String(data: data, encoding: .utf8)
-                throw ClaudeOAuthFetchError.serverError(http.statusCode, body)
             default:
                 let body = String(data: data, encoding: .utf8)
                 throw ClaudeOAuthFetchError.serverError(http.statusCode, body)

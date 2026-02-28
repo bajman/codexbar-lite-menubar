@@ -3,26 +3,16 @@ import CompilerPluginSupport
 import Foundation
 import PackageDescription
 
-let sweetCookieKitPath = "../SweetCookieKit"
-let useLocalSweetCookieKit =
-    ProcessInfo.processInfo.environment["CODEXBAR_USE_LOCAL_SWEETCOOKIEKIT"] == "1"
-let sweetCookieKitDependency: Package.Dependency =
-    useLocalSweetCookieKit && FileManager.default.fileExists(atPath: sweetCookieKitPath)
-    ? .package(path: sweetCookieKitPath)
-    : .package(url: "https://github.com/steipete/SweetCookieKit", from: "0.4.0")
-
 let package = Package(
     name: "CodexBar",
     platforms: [
         .macOS(.v14),
     ],
     dependencies: [
-        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.8.1"),
         .package(url: "https://github.com/steipete/Commander", from: "0.2.1"),
         .package(url: "https://github.com/apple/swift-log", from: "1.9.1"),
         .package(url: "https://github.com/apple/swift-syntax", from: "600.0.1"),
         .package(url: "https://github.com/sindresorhus/KeyboardShortcuts", from: "2.4.0"),
-        sweetCookieKitDependency,
     ],
     targets: {
         var targets: [Target] = [
@@ -31,7 +21,6 @@ let package = Package(
                 dependencies: [
                     "CodexBarMacroSupport",
                     .product(name: "Logging", package: "swift-log"),
-                    .product(name: "SweetCookieKit", package: "SweetCookieKit"),
                 ],
                 swiftSettings: [
                     .enableUpcomingFeature("StrictConcurrency"),
@@ -61,7 +50,7 @@ let package = Package(
             .testTarget(
                 name: "CodexBarLinuxTests",
                 dependencies: ["CodexBarCore", "CodexBarCLI"],
-                path: "TestsLinux",
+                path: "TestsLiteLinux",
                 swiftSettings: [
                     .enableUpcomingFeature("StrictConcurrency"),
                     .enableExperimentalFeature("SwiftTesting"),
@@ -80,7 +69,6 @@ let package = Package(
             .executableTarget(
                 name: "CodexBar",
                 dependencies: [
-                    .product(name: "Sparkle", package: "Sparkle"),
                     .product(name: "KeyboardShortcuts", package: "KeyboardShortcuts"),
                     "CodexBarMacroSupport",
                     "CodexBarCore",
@@ -92,7 +80,6 @@ let package = Package(
                 swiftSettings: [
                     // Opt into Swift 6 strict concurrency (approachable migration path).
                     .enableUpcomingFeature("StrictConcurrency"),
-                    .define("ENABLE_SPARKLE"),
                 ]),
             .executableTarget(
                 name: "CodexBarWidget",
@@ -101,19 +88,12 @@ let package = Package(
                 swiftSettings: [
                     .enableUpcomingFeature("StrictConcurrency"),
                 ]),
-            .executableTarget(
-                name: "CodexBarClaudeWebProbe",
-                dependencies: ["CodexBarCore"],
-                path: "Sources/CodexBarClaudeWebProbe",
-                swiftSettings: [
-                    .enableUpcomingFeature("StrictConcurrency"),
-                ]),
         ])
 
         targets.append(.testTarget(
             name: "CodexBarTests",
             dependencies: ["CodexBar", "CodexBarCore", "CodexBarCLI"],
-            path: "Tests",
+            path: "TestsLite",
             swiftSettings: [
                 .enableUpcomingFeature("StrictConcurrency"),
                 .enableExperimentalFeature("SwiftTesting"),

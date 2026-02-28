@@ -48,7 +48,14 @@ extension CodexBarCLI {
         if sourceModeRaw != nil, parsedSourceMode == nil {
             Self.exit(
                 code: .failure,
-                message: "Error: --source must be auto|web|cli|oauth|api.",
+                message: "Error: --source must be auto|oauth.",
+                output: output,
+                kind: .args)
+        }
+        if let parsedSourceMode, parsedSourceMode != .auto, parsedSourceMode != .oauth {
+            Self.exit(
+                code: .failure,
+                message: "Error: lite mode only supports --source auto|oauth.",
                 output: output,
                 kind: .args)
         }
@@ -62,43 +69,11 @@ extension CodexBarCLI {
         let resetStyle = Self.resetTimeDisplayStyleFromDefaults()
         let providerList = provider.asList
 
-        let tokenSelection: TokenAccountCLISelection
-        do {
-            tokenSelection = try Self.decodeTokenAccountSelection(from: values)
-        } catch {
-            Self.exit(code: .failure, message: "Error: \(error.localizedDescription)", output: output, kind: .args)
-        }
-
-        if tokenSelection.allAccounts, tokenSelection.label != nil || tokenSelection.index != nil {
-            Self.exit(
-                code: .failure,
-                message: "Error: --all-accounts cannot be combined with --account or --account-index.",
-                output: output,
-                kind: .args)
-        }
-
-        if tokenSelection.usesOverride {
-            guard providerList.count == 1 else {
-                Self.exit(
-                    code: .failure,
-                    message: "Error: account selection requires a single provider.",
-                    output: output,
-                    kind: .args)
-            }
-            guard TokenAccountSupportCatalog.support(for: providerList[0]) != nil else {
-                Self.exit(
-                    code: .failure,
-                    message: "Error: \(providerList[0].rawValue) does not support token accounts.",
-                    output: output,
-                    kind: .args)
-            }
-        }
-
         #if !os(macOS)
         if parsedSourceMode?.usesWeb == true {
             Self.exit(
                 code: .failure,
-                message: "Error: --source web/auto is only supported on macOS.",
+                message: "Error: lite mode only supports --source auto|oauth.",
                 output: output,
                 kind: .runtime)
         }
@@ -110,7 +85,7 @@ extension CodexBarCLI {
         let tokenContext: TokenAccountCLIContext
         do {
             tokenContext = try TokenAccountCLIContext(
-                selection: tokenSelection,
+                selection: TokenAccountCLISelection(label: nil, index: nil, allAccounts: false),
                 config: config,
                 verbose: verbose)
         } catch {
@@ -394,7 +369,7 @@ extension CodexBarCLI {
         let error = NSError(
             domain: "CodexBarCLI",
             code: 1,
-            userInfo: [NSLocalizedDescriptionKey: "Error: --source web/auto is only supported on macOS."])
+            userInfo: [NSLocalizedDescriptionKey: "Error: lite mode only supports --source auto|oauth."])
         output.exitCode = .failure
         if command.format == .json {
             output.payload.append(Self.makeProviderErrorPayload(

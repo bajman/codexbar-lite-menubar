@@ -319,23 +319,4 @@ extension StatusItemController {
         AppNotifications.shared.post(idPrefix: "login-\(provider.rawValue)", title: title, body: body)
     }
 
-    func presentCursorLoginResult(_ result: CursorLoginRunner.Result) {
-        switch result.outcome {
-        case .success:
-            return
-        case .cancelled:
-            // User closed the window; no alert needed
-            return
-        case let .failed(message):
-            self.presentLoginAlert(title: "Cursor login failed", message: message)
-        }
-    }
-
-    func describe(_ outcome: CursorLoginRunner.Result.Outcome) -> String {
-        switch outcome {
-        case .success: "success"
-        case .cancelled: "cancelled"
-        case let .failed(message): "failed(\(message))"
-        }
-    }
 }

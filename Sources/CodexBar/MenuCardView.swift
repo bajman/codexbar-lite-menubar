@@ -697,6 +697,8 @@ extension UsageMenuCardView.Model {
         switch openRouter.keyQuotaStatus {
         case .available:
             return []
+        case .limited:
+            return []
         case .noLimitConfigured:
             return ["No limit set for the API key"]
         case .unavailable:

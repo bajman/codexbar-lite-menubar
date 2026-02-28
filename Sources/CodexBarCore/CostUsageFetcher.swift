@@ -24,9 +24,9 @@ public struct CostUsageFetcher: Sendable {
         provider: UsageProvider,
         now: Date = Date(),
         forceRefresh: Bool = false,
-        allowVertexClaudeFallback: Bool = false) async throws -> CostUsageTokenSnapshot
+        allowVertexClaudeFallback _: Bool = false) async throws -> CostUsageTokenSnapshot
     {
-        guard provider == .codex || provider == .claude || provider == .vertexai else {
+        guard provider == .codex || provider == .claude else {
             throw CostUsageError.unsupportedProvider(provider)
         }
 
@@ -35,9 +35,7 @@ public struct CostUsageFetcher: Sendable {
         let since = Calendar.current.date(byAdding: .day, value: -29, to: now) ?? now
 
         var options = CostUsageScanner.Options()
-        if provider == .vertexai {
-            options.claudeLogProviderFilter = allowVertexClaudeFallback ? .all : .vertexAIOnly
-        } else if provider == .claude {
+        if provider == .claude {
             options.claudeLogProviderFilter = .excludeVertexAI
         }
         if forceRefresh {
@@ -50,21 +48,6 @@ public struct CostUsageFetcher: Sendable {
             until: until,
             now: now,
             options: options)
-
-        if provider == .vertexai,
-           !allowVertexClaudeFallback,
-           options.claudeLogProviderFilter == .vertexAIOnly,
-           daily.data.isEmpty
-        {
-            var fallback = options
-            fallback.claudeLogProviderFilter = .all
-            daily = CostUsageScanner.loadDailyReport(
-                provider: provider,
-                since: since,
-                until: until,
-                now: now,
-                options: fallback)
-        }
 
         return Self.tokenSnapshot(from: daily, now: now)
     }

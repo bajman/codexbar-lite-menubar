@@ -7,15 +7,8 @@ extension SettingsStore {
     }
 
     var tokenAccountsByProvider: [UsageProvider: ProviderTokenAccountData] {
-        get {
-            Dictionary(uniqueKeysWithValues: self.configSnapshot.providers.compactMap { entry in
-                guard let accounts = entry.tokenAccounts else { return nil }
-                return (entry.id, accounts)
-            })
-        }
-        set {
-            self.updateProviderTokenAccounts(newValue)
-        }
+        get { [:] }
+        set { _ = newValue }
     }
 }
 
@@ -24,9 +17,9 @@ extension SettingsStore {
         provider: UsageProvider,
         fallback: ProviderCookieSource) -> ProviderCookieSource
     {
-        let source = self.configSnapshot.providerConfig(for: provider)?.cookieSource ?? fallback
-        guard self.debugDisableKeychainAccess == false else { return source == .off ? .off : .manual }
-        return source
+        _ = provider
+        _ = fallback
+        return .off
     }
 
     func logProviderModeChange(provider: UsageProvider, field: String, value: String) {

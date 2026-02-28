@@ -59,25 +59,10 @@ extension SettingsStore {
     }
 
     func updateProviderTokenAccounts(_ accounts: [UsageProvider: ProviderTokenAccountData]) {
-        let summary = accounts
-            .sorted { $0.key.rawValue < $1.key.rawValue }
-            .map { "\($0.key.rawValue)=\($0.value.accounts.count)" }
-            .joined(separator: ",")
-        CodexBarLog.logger(LogCategories.tokenAccounts).info(
-            "Token accounts updated",
-            metadata: [
-                "providers": "\(accounts.count)",
-                "summary": summary,
-            ])
-        self.updateConfig(reason: "token-accounts") { config in
-            var seen: Set<UsageProvider> = []
+        _ = accounts
+        self.updateConfig(reason: "token-accounts-lite-noop") { config in
             for index in config.providers.indices {
-                let provider = config.providers[index].id
-                config.providers[index].tokenAccounts = accounts[provider]
-                seen.insert(provider)
-            }
-            for (provider, data) in accounts where !seen.contains(provider) {
-                config.providers.append(ProviderConfig(id: provider, tokenAccounts: data))
+                config.providers[index].tokenAccounts = nil
             }
         }
     }

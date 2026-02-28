@@ -18,8 +18,6 @@ struct CodexProviderImplementation: ProviderImplementation {
     @MainActor
     func observeSettings(_ settings: SettingsStore) {
         _ = settings.codexUsageDataSource
-        _ = settings.codexCookieSource
-        _ = settings.codexCookieHeader
     }
 
     @MainActor
@@ -33,23 +31,11 @@ struct CodexProviderImplementation: ProviderImplementation {
     }
 
     @MainActor
-    func decorateSourceLabel(context: ProviderSourceLabelContext, baseLabel: String) -> String {
-        if context.settings.codexCookieSource.isEnabled,
-           context.store.openAIDashboard != nil,
-           !context.store.openAIDashboardRequiresLogin,
-           !baseLabel.contains("openai-web")
-        {
-            return "\(baseLabel) + openai-web"
-        }
-        return baseLabel
-    }
-
-    @MainActor
     func sourceMode(context: ProviderSourceModeContext) -> ProviderSourceMode {
         switch context.settings.codexUsageDataSource {
         case .auto: .auto
         case .oauth: .oauth
-        case .cli: .cli
+        case .cli: .auto
         }
     }
 
@@ -59,30 +45,8 @@ struct CodexProviderImplementation: ProviderImplementation {
 
     @MainActor
     func settingsToggles(context: ProviderSettingsContext) -> [ProviderSettingsToggleDescriptor] {
-        let extrasBinding = Binding(
-            get: { context.settings.openAIWebAccessEnabled },
-            set: { enabled in
-                context.settings.openAIWebAccessEnabled = enabled
-                Task { @MainActor in
-                    await context.store.performRuntimeAction(
-                        .openAIWebAccessToggled(enabled),
-                        for: .codex)
-                }
-            })
-
-        return [
-            ProviderSettingsToggleDescriptor(
-                id: "codex-openai-web-extras",
-                title: "OpenAI web extras",
-                subtitle: "Show usage breakdown, credits history, and code review via chatgpt.com.",
-                binding: extrasBinding,
-                statusText: nil,
-                actions: [],
-                isVisible: nil,
-                onChange: nil,
-                onAppDidBecomeActive: nil,
-                onAppearWhenEnabled: nil),
-        ]
+        _ = context
+        return []
     }
 
     @MainActor
@@ -92,33 +56,15 @@ struct CodexProviderImplementation: ProviderImplementation {
             set: { raw in
                 context.settings.codexUsageDataSource = CodexUsageDataSource(rawValue: raw) ?? .auto
             })
-        let cookieBinding = Binding(
-            get: { context.settings.codexCookieSource.rawValue },
-            set: { raw in
-                context.settings.codexCookieSource = ProviderCookieSource(rawValue: raw) ?? .auto
-            })
-
-        let usageOptions = CodexUsageDataSource.allCases.map {
+        let usageOptions = CodexUsageDataSource.allCases.filter { $0 != .cli }.map {
             ProviderSettingsPickerOption(id: $0.rawValue, title: $0.displayName)
-        }
-        let cookieOptions = ProviderCookieSourceUI.options(
-            allowsOff: true,
-            keychainDisabled: context.settings.debugDisableKeychainAccess)
-
-        let cookieSubtitle: () -> String? = {
-            ProviderCookieSourceUI.subtitle(
-                source: context.settings.codexCookieSource,
-                keychainDisabled: context.settings.debugDisableKeychainAccess,
-                auto: "Automatic imports browser cookies for dashboard extras.",
-                manual: "Paste a Cookie header from a chatgpt.com request.",
-                off: "Disable OpenAI dashboard cookie usage.")
         }
 
         return [
             ProviderSettingsPickerDescriptor(
                 id: "codex-usage-source",
                 title: "Usage source",
-                subtitle: "Auto falls back to the next source if the preferred one fails.",
+                subtitle: "Lite mode allows direct OAuth usage fetch only.",
                 binding: usageBinding,
                 options: usageOptions,
                 isVisible: nil,
@@ -128,39 +74,13 @@ struct CodexProviderImplementation: ProviderImplementation {
                     let label = context.store.sourceLabel(for: .codex)
                     return label == "auto" ? nil : label
                 }),
-            ProviderSettingsPickerDescriptor(
-                id: "codex-cookie-source",
-                title: "OpenAI cookies",
-                subtitle: "Automatic imports browser cookies for dashboard extras.",
-                dynamicSubtitle: cookieSubtitle,
-                binding: cookieBinding,
-                options: cookieOptions,
-                isVisible: { context.settings.openAIWebAccessEnabled },
-                onChange: nil,
-                trailingText: {
-                    guard let entry = CookieHeaderCache.load(provider: .codex) else { return nil }
-                    let when = entry.storedAt.relativeDescription()
-                    return "Cached: \(entry.sourceLabel) • \(when)"
-                }),
         ]
     }
 
     @MainActor
     func settingsFields(context: ProviderSettingsContext) -> [ProviderSettingsFieldDescriptor] {
-        [
-            ProviderSettingsFieldDescriptor(
-                id: "codex-cookie-header",
-                title: "",
-                subtitle: "",
-                kind: .secure,
-                placeholder: "Cookie: …",
-                binding: context.stringBinding(\.codexCookieHeader),
-                actions: [],
-                isVisible: {
-                    context.settings.codexCookieSource == .manual
-                },
-                onActivate: { context.settings.ensureCodexCookieLoaded() }),
-        ]
+        _ = context
+        return []
     }
 
     @MainActor

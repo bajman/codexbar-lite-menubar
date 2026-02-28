@@ -12,21 +12,14 @@ extension CodexBarCLI {
                        [--json-only]
                        [--json-output] [--log-level <trace|verbose|debug|info|warning|error|critical>] [-v|--verbose]
                        [--provider \(ProviderHelp.list)]
-                       [--account <label>] [--account-index <index>] [--all-accounts]
-                       [--no-credits] [--no-color] [--pretty] [--status] [--source <auto|web|cli|oauth|api>]
-                       [--web-timeout <seconds>] [--web-debug-dump-html] [--antigravity-plan-debug] [--augment-debug]
+                       [--no-credits] [--no-color] [--pretty] [--status] [--source <auto|oauth>]
+                       [--antigravity-plan-debug] [--augment-debug]
 
         Description:
           Print usage from enabled providers as text (default) or JSON. Honors your in-app toggles.
           Output format: use --json (or --format json) for JSON on stdout; use --json-output for JSON logs on stderr.
-          When --source is auto/web (macOS only), CodexBar uses browser cookies to fetch web-backed data:
-          - Codex: OpenAI web dashboard (usage limits, credits remaining, code review remaining, usage breakdown).
-            Auto falls back to Codex CLI only when cookies are missing.
-          - Claude: claude.ai API.
-            Auto falls back to Claude CLI only when cookies are missing.
-          Token accounts are loaded from ~/.codexbar/config.json.
-          Use --account or --account-index to select a specific token account, or --all-accounts to fetch all.
-          Account selection requires a single provider.
+          Lite mode supports only direct OAuth/API fetch for Codex and Claude.
+          --source auto and --source oauth are equivalent in lite mode.
 
         Global flags:
           -h, --help      Show help
@@ -39,11 +32,10 @@ extension CodexBarCLI {
         Examples:
           codexbar usage
           codexbar usage --provider claude
-          codexbar usage --provider gemini
           codexbar usage --format json --provider all --pretty
           codexbar usage --provider all --json
           codexbar usage --status
-          codexbar usage --provider codex --source web --format json --pretty
+          codexbar usage --provider codex --source oauth --format json --pretty
         """
     }
 
@@ -106,9 +98,8 @@ extension CodexBarCLI {
                   [--json-only]
                   [--json-output] [--log-level <trace|verbose|debug|info|warning|error|critical>] [-v|--verbose]
                   [--provider \(ProviderHelp.list)]
-                  [--account <label>] [--account-index <index>] [--all-accounts]
-                  [--no-credits] [--no-color] [--pretty] [--status] [--source <auto|web|cli|oauth|api>]
-                  [--web-timeout <seconds>] [--web-debug-dump-html] [--antigravity-plan-debug] [--augment-debug]
+                  [--no-credits] [--no-color] [--pretty] [--status] [--source <auto|oauth>]
+                  [--antigravity-plan-debug] [--augment-debug]
           codexbar cost [--format text|json]
                        [--json]
                        [--json-only]
@@ -133,7 +124,6 @@ extension CodexBarCLI {
           codexbar
           codexbar --format json --provider all --pretty
           codexbar --provider all --json
-          codexbar --provider gemini
           codexbar cost --provider claude --format json --pretty
           codexbar config validate --format json --pretty
         """

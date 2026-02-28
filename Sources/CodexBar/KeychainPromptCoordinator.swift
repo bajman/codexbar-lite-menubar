@@ -1,6 +1,5 @@
 import AppKit
 import CodexBarCore
-import SweetCookieKit
 
 enum KeychainPromptCoordinator {
     private static let promptLock = NSLock()

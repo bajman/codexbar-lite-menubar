@@ -13,7 +13,7 @@ public enum CodexUsageDataSource: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .auto: "Auto"
         case .oauth: "OAuth API"
-        case .cli: "CLI (RPC/PTY)"
+        case .cli: "CLI (Disabled in Lite)"
         }
     }
 
@@ -24,7 +24,7 @@ public enum CodexUsageDataSource: String, CaseIterable, Identifiable, Sendable {
         case .oauth:
             "oauth"
         case .cli:
-            "cli"
+            "cli-disabled"
         }
     }
 }

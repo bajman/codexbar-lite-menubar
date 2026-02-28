@@ -131,7 +131,7 @@ public enum CodexOAuthFetchError: LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .unauthorized:
-            return "Codex OAuth token expired or invalid. Run `codex` to re-authenticate."
+            return "Codex token expired or invalid. Run `codex login` to re-authenticate."
         case .invalidResponse:
             return "Invalid response from Codex usage API."
         case let .serverError(code, message):

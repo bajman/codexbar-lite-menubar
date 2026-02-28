@@ -148,8 +148,8 @@ final class SettingsStore {
         LaunchAtLoginManager.setEnabled(self.launchAtLogin)
         self.runInitialProviderDetectionIfNeeded()
         self.applyTokenCostDefaultIfNeeded()
-        if self.claudeUsageDataSource != .cli { self.claudeWebExtrasEnabled = false }
-        self.openAIWebAccessEnabled = self.codexCookieSource.isEnabled
+        self.claudeWebExtrasEnabled = false
+        self.openAIWebAccessEnabled = false
         Self.sharedDefaults?.set(self.debugDisableKeychainAccess, forKey: "debugDisableKeychainAccess")
         KeychainAccessGate.isDisabled = self.debugDisableKeychainAccess
     }

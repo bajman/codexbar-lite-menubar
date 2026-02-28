@@ -6,11 +6,7 @@ import Foundation
 
 struct UsageOptions: CommanderParsable {
     private static let sourceHelp: String = {
-        #if os(macOS)
-        "Data source: auto | web | cli | oauth | api (auto uses web then falls back on missing cookies)"
-        #else
-        "Data source: auto | web | cli | oauth | api (web/auto are macOS only)"
-        #endif
+        "Data source: auto | oauth"
     }()
 
     @Flag(names: [.short("v"), .long("verbose")], help: "Enable verbose logging")
@@ -26,15 +22,6 @@ struct UsageOptions: CommanderParsable {
         name: .long("provider"),
         help: ProviderHelp.optionHelp)
     var provider: ProviderSelection?
-
-    @Option(name: .long("account"), help: "Token account label to use (from config.json)")
-    var account: String?
-
-    @Option(name: .long("account-index"), help: "Token account index (1-based)")
-    var accountIndex: Int?
-
-    @Flag(name: .long("all-accounts"), help: "Fetch all token accounts for the provider")
-    var allAccounts: Bool = false
 
     @Option(name: .long("format"), help: "Output format: text | json")
     var format: OutputFormat?
@@ -57,16 +44,16 @@ struct UsageOptions: CommanderParsable {
     @Flag(name: .long("status"), help: "Fetch and include provider status")
     var status: Bool = false
 
-    @Flag(name: .long("web"), help: "Alias for --source web")
+    @Flag(name: .long("web"), help: "Deprecated (lite mode rejects web source)")
     var web: Bool = false
 
     @Option(name: .long("source"), help: Self.sourceHelp)
     var source: String?
 
-    @Option(name: .long("web-timeout"), help: "Web fetch timeout (seconds) (Codex only; source=auto|web)")
+    @Option(name: .long("web-timeout"), help: "Deprecated in lite mode")
     var webTimeout: Double?
 
-    @Flag(name: .long("web-debug-dump-html"), help: "Dump HTML snapshots to /tmp when Codex dashboard data is missing")
+    @Flag(name: .long("web-debug-dump-html"), help: "Deprecated in lite mode")
     var webDebugDumpHtml: Bool = false
 
     @Flag(name: .long("antigravity-plan-debug"), help: "Emit Antigravity planInfo fields (debug)")

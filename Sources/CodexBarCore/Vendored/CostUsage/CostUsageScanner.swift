@@ -64,14 +64,7 @@ enum CostUsageScanner {
             return self.loadCodexDaily(range: range, now: now, options: options)
         case .claude:
             return self.loadClaudeDaily(provider: .claude, range: range, now: now, options: options)
-        case .vertexai:
-            var filtered = options
-            if filtered.claudeLogProviderFilter == .all {
-                filtered.claudeLogProviderFilter = .vertexAIOnly
-            }
-            return self.loadClaudeDaily(provider: .vertexai, range: range, now: now, options: filtered)
-        case .zai, .gemini, .antigravity, .cursor, .opencode, .factory, .copilot, .minimax, .kiro, .kimi, .kimik2,
-             .augment, .jetbrains, .amp, .ollama, .synthetic, .openrouter, .warp:
+        default:
             return emptyReport
         }
     }

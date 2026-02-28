@@ -1,60 +1,55 @@
-#if os(macOS)
-import SweetCookieKit
+import Foundation
 
-public typealias BrowserCookieImportOrder = [Browser]
-#else
-public struct Browser: Sendable, Hashable {
-    public init() {}
+public enum Browser: String, CaseIterable, Sendable, Hashable {
+    case safari
+    case firefox
+    case zen
+    case chrome
+    case chromeBeta
+    case chromeCanary
+    case arc
+    case arcBeta
+    case arcCanary
+    case chatgptAtlas
+    case chromium
+    case brave
+    case braveBeta
+    case braveNightly
+    case edge
+    case edgeBeta
+    case edgeCanary
+    case helium
+    case vivaldi
+    case dia
+
+    public static var defaultImportOrder: [Browser] {
+        []
+    }
+
+    public static var safeStorageLabels: [(service: String, account: String)] {
+        []
+    }
+
+    var appBundleName: String? { nil }
+    var chromiumProfileRelativePath: String? { nil }
+    var geckoProfilesFolder: String? { nil }
+    var usesGeckoProfileStore: Bool { false }
+    var usesChromiumProfileStore: Bool { false }
+    var usesKeychainForCookieDecryption: Bool { false }
 }
 
 public typealias BrowserCookieImportOrder = [Browser]
-#endif
 
 extension [Browser] {
-    /// Filters a browser list to sources worth attempting for cookie imports.
-    ///
-    /// This is intentionally stricter than "app installed": it aims to avoid unnecessary Keychain prompts.
-    public func cookieImportCandidates(using detection: BrowserDetection) -> [Browser] {
-        let candidates = self.filter { browser in
-            if KeychainAccessGate.isDisabled, browser.usesKeychainForCookieDecryption {
-                return false
-            }
-            return detection.isCookieSourceAvailable(browser)
-        }
-        return candidates.filter { BrowserCookieAccessGate.shouldAttempt($0) }
+    public func cookieImportCandidates(using _: BrowserDetection) -> [Browser] {
+        []
     }
 
-    /// Filters a browser list to sources with usable profile data on disk.
-    public func browsersWithProfileData(using detection: BrowserDetection) -> [Browser] {
-        self.filter { detection.hasUsableProfileData($0) }
+    public func browsersWithProfileData(using _: BrowserDetection) -> [Browser] {
+        []
     }
-}
 
-#if os(macOS)
-extension Browser {
-    var usesKeychainForCookieDecryption: Bool {
-        switch self {
-        case .safari, .firefox, .zen:
-            return false
-        case .chrome, .chromeBeta, .chromeCanary,
-             .arc, .arcBeta, .arcCanary,
-             .chatgptAtlas,
-             .chromium,
-             .brave, .braveBeta, .braveNightly,
-             .edge, .edgeBeta, .edgeCanary,
-             .helium,
-             .vivaldi,
-             .dia:
-            return true
-        @unknown default:
-            return true
-        }
+    public var loginHint: String {
+        "your authenticated browser"
     }
 }
-#else
-extension Browser {
-    var usesKeychainForCookieDecryption: Bool {
-        false
-    }
-}
-#endif

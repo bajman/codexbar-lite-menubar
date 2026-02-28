@@ -221,12 +221,10 @@ extension CodexBarCLI {
     static func mapError(_ error: Error) -> ExitCode {
         switch error {
         case TTYCommandRunner.Error.binaryNotFound,
-             CodexStatusProbeError.codexNotInstalled,
              ClaudeUsageError.claudeNotInstalled,
              GeminiStatusProbeError.geminiNotInstalled:
             ExitCode(2)
-        case CodexStatusProbeError.timedOut,
-             TTYCommandRunner.Error.timedOut,
+        case TTYCommandRunner.Error.timedOut,
              GeminiStatusProbeError.timedOut,
              CostUsageError.timedOut:
             ExitCode(4)

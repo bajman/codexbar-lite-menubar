@@ -2,7 +2,6 @@ import Foundation
 
 public enum CLIProbeSessionResetter {
     public static func resetAll() async {
-        await ClaudeCLISession.shared.reset()
-        await CodexCLISession.shared.reset()
+        // Lite mode has no long-lived CLI probe sessions.
     }
 }

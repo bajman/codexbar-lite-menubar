@@ -41,4 +41,8 @@ enum MenuHighlightStyle {
     static func selectionBackground(_ highlighted: Bool) -> Color {
         highlighted ? Color(nsColor: .selectedContentBackgroundColor) : .clear
     }
+
+    static var glassFontDesign: Font.Design? {
+        LiquidGlassAvailability.shouldApplyGlass ? .rounded : nil
+    }
 }

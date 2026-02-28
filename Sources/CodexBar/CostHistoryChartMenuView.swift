@@ -92,12 +92,14 @@ struct CostHistoryChartMenuView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(detail.primary)
                         .font(.caption)
+                        .fontDesign(MenuHighlightStyle.glassFontDesign)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .frame(height: 16, alignment: .leading)
                     Text(detail.secondary ?? " ")
                         .font(.caption)
+                        .fontDesign(MenuHighlightStyle.glassFontDesign)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -109,6 +111,7 @@ struct CostHistoryChartMenuView: View {
             if let total = self.totalCostUSD {
                 Text("Total (30d): \(UsageFormatter.usdString(total))")
                     .font(.caption)
+                    .fontDesign(MenuHighlightStyle.glassFontDesign)
                     .foregroundStyle(.secondary)
             }
         }
@@ -128,7 +131,11 @@ struct CostHistoryChartMenuView: View {
         let maxCostUSD: Double
     }
 
-    private static let selectionBandColor = Color(nsColor: .labelColor).opacity(0.1)
+    private static var selectionBandColor: Color {
+        LiquidGlassAvailability.shouldApplyGlass
+            ? Color.white.opacity(0.12)
+            : Color(nsColor: .labelColor).opacity(0.1)
+    }
 
     private static func capHeight(maxValue: Double) -> Double {
         maxValue * 0.05

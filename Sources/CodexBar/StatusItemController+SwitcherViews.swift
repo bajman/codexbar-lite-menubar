@@ -745,20 +745,39 @@ final class ProviderSwitcherView: NSView {
     private func addWeeklyIndicator(to view: NSView, selection: ProviderSwitcherSelection, remainingPercent: Double?) {
         guard let remainingPercent else { return }
 
+        let glassActive: Bool = {
+            if #available(macOS 26, *) { return LiquidGlassAvailability.shouldApplyGlass }
+            return false
+        }()
+
+        let trackHeight: CGFloat = glassActive ? 5 : 4
+        let trackRadius: CGFloat = glassActive ? 2.5 : 2
+
         let track = NSView()
         track.wantsLayer = true
-        track.layer?.backgroundColor = NSColor.tertiaryLabelColor.withAlphaComponent(0.22).cgColor
-        track.layer?.cornerRadius = 2
+        track.layer?.backgroundColor = glassActive
+            ? NSColor.white.withAlphaComponent(0.12).cgColor
+            : NSColor.tertiaryLabelColor.withAlphaComponent(0.22).cgColor
+        track.layer?.cornerRadius = trackRadius
         track.layer?.masksToBounds = true
         track.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(track)
 
+        let fillColor = Self.weeklyIndicatorColor(for: selection)
         let fill = NSView()
         fill.wantsLayer = true
-        fill.layer?.backgroundColor = Self.weeklyIndicatorColor(for: selection).cgColor
-        fill.layer?.cornerRadius = 2
+        fill.layer?.backgroundColor = fillColor.cgColor
+        fill.layer?.cornerRadius = trackRadius
         fill.translatesAutoresizingMaskIntoConstraints = false
         track.addSubview(fill)
+
+        if glassActive {
+            fill.layer?.shadowColor = fillColor.cgColor
+            fill.layer?.shadowOpacity = 0.35
+            fill.layer?.shadowRadius = 3
+            fill.layer?.shadowOffset = CGSize(width: 0, height: 1)
+            fill.layer?.masksToBounds = false
+        }
 
         let ratio = CGFloat(max(0, min(1, remainingPercent / 100)))
 
@@ -766,7 +785,7 @@ final class ProviderSwitcherView: NSView {
             track.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 6),
             track.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -6),
             track.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -1),
-            track.heightAnchor.constraint(equalToConstant: 4),
+            track.heightAnchor.constraint(equalToConstant: trackHeight),
             fill.leadingAnchor.constraint(equalTo: track.leadingAnchor),
             fill.topAnchor.constraint(equalTo: track.topAnchor),
             fill.bottomAnchor.constraint(equalTo: track.bottomAnchor),

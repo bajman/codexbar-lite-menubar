@@ -87,12 +87,14 @@ struct UsageBreakdownChartMenuView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(detail.primary)
                         .font(.caption)
+                        .fontDesign(MenuHighlightStyle.glassFontDesign)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .frame(height: 16, alignment: .leading)
                     Text(detail.secondary ?? " ")
                         .font(.caption)
+                        .fontDesign(MenuHighlightStyle.glassFontDesign)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -143,7 +145,11 @@ struct UsageBreakdownChartMenuView: View {
         }
     }
 
-    private static let selectionBandColor = Color(nsColor: .labelColor).opacity(0.1)
+    private static var selectionBandColor: Color {
+        LiquidGlassAvailability.shouldApplyGlass
+            ? Color.white.opacity(0.12)
+            : Color(nsColor: .labelColor).opacity(0.1)
+    }
 
     private static func makeModel(from breakdown: [OpenAIDashboardDailyBreakdown]) -> Model {
         let sorted = breakdown

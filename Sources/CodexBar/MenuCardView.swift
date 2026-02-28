@@ -155,8 +155,10 @@ struct UsageMenuCardView: View {
                                 .fontWeight(.medium)
                             Text(tokenUsage.sessionLine)
                                 .font(.footnote)
+                                .fontDesign(MenuHighlightStyle.glassFontDesign)
                             Text(tokenUsage.monthLine)
                                 .font(.footnote)
+                                .fontDesign(MenuHighlightStyle.glassFontDesign)
                             if let hint = tokenUsage.hintLine, !hint.isEmpty {
                                 Text(hint)
                                     .font(.footnote)
@@ -311,9 +313,10 @@ private struct ProviderCostContent: View {
                 Text(self.section.spendLine)
                     .font(.footnote)
                 Spacer()
-                Text(String(format: "%.0f%% used", min(100, max(0, self.section.percentUsed))))
-                    .font(.footnote)
-                    .foregroundStyle(MenuHighlightStyle.secondary(self.isHighlighted))
+                MenuGlassMetricPill(
+                    text: String(format: "%.0f%% used", min(100, max(0, self.section.percentUsed))),
+                    color: self.progressColor,
+                    emphasized: false)
             }
         }
     }
@@ -338,9 +341,10 @@ private struct MetricRow: View {
                 paceOnTop: self.metric.paceOnTop)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(self.metric.percentLabel)
-                        .font(.footnote)
-                        .lineLimit(1)
+                    MenuGlassMetricPill(
+                        text: self.metric.percentLabel,
+                        color: self.progressColor,
+                        emphasized: true)
                     Spacer()
                     if let rightLabel = self.metric.resetText {
                         Text(rightLabel)
@@ -518,9 +522,11 @@ private struct CreditsBarContent: View {
                 HStack(alignment: .firstTextBaseline) {
                     Text(self.creditsText)
                         .font(.caption)
+                        .fontDesign(MenuHighlightStyle.glassFontDesign)
                     Spacer()
                     Text(self.scaleText)
                         .font(.caption)
+                        .fontDesign(MenuHighlightStyle.glassFontDesign)
                         .foregroundStyle(MenuHighlightStyle.secondary(self.isHighlighted))
                 }
             } else {
@@ -560,8 +566,10 @@ struct UsageMenuCardCostSectionView: View {
                                 .fontWeight(.medium)
                             Text(tokenUsage.sessionLine)
                                 .font(.caption)
+                                .fontDesign(MenuHighlightStyle.glassFontDesign)
                             Text(tokenUsage.monthLine)
                                 .font(.caption)
+                                .fontDesign(MenuHighlightStyle.glassFontDesign)
                             if let hint = tokenUsage.hintLine, !hint.isEmpty {
                                 Text(hint)
                                     .font(.footnote)
@@ -1060,6 +1068,46 @@ extension UsageMenuCardView.Model {
         now: Date) -> String?
     {
         UsageFormatter.resetLine(for: window, style: style, now: now)
+    }
+}
+
+// MARK: - Glass Metric Pill
+
+private struct MenuGlassMetricPill: View {
+    let text: String
+    let color: Color
+    let emphasized: Bool
+    @Environment(\.menuItemHighlighted) private var isHighlighted
+
+    var body: some View {
+        let shouldGlass = LiquidGlassAvailability.shouldApplyGlass && !self.isHighlighted
+        if shouldGlass {
+            if #available(macOS 26, *) {
+                Text(self.text)
+                    .font(.footnote)
+                    .fontWeight(self.emphasized ? .semibold : .regular)
+                    .fontDesign(.rounded)
+                    .foregroundStyle(self.emphasized ? .primary : .secondary)
+                    .lineLimit(1)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .glassEffect(
+                        self.emphasized
+                            ? .regular.tint(self.color)
+                            : .regular,
+                        in: Capsule())
+            } else {
+                self.plainText
+            }
+        } else {
+            self.plainText
+        }
+    }
+
+    private var plainText: some View {
+        Text(self.text)
+            .font(.footnote)
+            .lineLimit(1)
     }
 }
 

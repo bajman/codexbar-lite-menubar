@@ -84,12 +84,14 @@ struct CreditsHistoryChartMenuView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(detail.primary)
                         .font(.caption)
+                        .fontDesign(MenuHighlightStyle.glassFontDesign)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .frame(height: 16, alignment: .leading)
                     Text(detail.secondary ?? " ")
                         .font(.caption)
+                        .fontDesign(MenuHighlightStyle.glassFontDesign)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -100,6 +102,7 @@ struct CreditsHistoryChartMenuView: View {
                 if let total = model.totalCreditsUsed {
                     Text("Total (30d): \(total.formatted(.number.precision(.fractionLength(0...2)))) credits")
                         .font(.caption)
+                        .fontDesign(MenuHighlightStyle.glassFontDesign)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -122,7 +125,11 @@ struct CreditsHistoryChartMenuView: View {
     }
 
     private static let barColor = Color(red: 73 / 255, green: 163 / 255, blue: 176 / 255)
-    private static let selectionBandColor = Color(nsColor: .labelColor).opacity(0.1)
+    private static var selectionBandColor: Color {
+        LiquidGlassAvailability.shouldApplyGlass
+            ? Color.white.opacity(0.12)
+            : Color(nsColor: .labelColor).opacity(0.1)
+    }
     private static func capHeight(maxValue: Double) -> Double {
         maxValue * 0.05
     }

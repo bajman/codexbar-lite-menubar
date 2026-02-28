@@ -78,4 +78,24 @@ cp -R "$ROOT/CodexBar.app" /Applications/CodexBar.app
 
 open /Applications/CodexBar.app
 
-echo "Done. CodexBar Lite launched."
+CLI_HELPER="/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI"
+
+if [[ ! -x "$CLI_HELPER" ]]; then
+  echo "ERROR: missing CLI helper at $CLI_HELPER"
+  exit 1
+fi
+
+echo "Running post-install health checks..."
+if ! "$CLI_HELPER" usage --provider codex --source oauth --json-only >/dev/null; then
+  echo "ERROR: Codex health check failed."
+  echo "Run: codex login"
+  exit 1
+fi
+
+if ! "$CLI_HELPER" usage --provider claude --source oauth --json-only >/dev/null; then
+  echo "ERROR: Claude health check failed."
+  echo "Run: claude login"
+  exit 1
+fi
+
+echo "Done. CodexBar Lite launched and health checks passed."

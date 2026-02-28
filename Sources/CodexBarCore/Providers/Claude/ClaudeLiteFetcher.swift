@@ -28,33 +28,60 @@ struct ClaudeLiteFetcher {
     }
 
     private func loadCredentials() throws -> ClaudeOAuthCredentials {
-        // Lite policy: keychain first, then ~/.claude/.credentials.json fallback.
-        if let fromKeychain = try? ClaudeOAuthCredentialsStore.loadFromClaudeKeychain(),
-           let parsed = try? ClaudeOAuthCredentials.parse(data: fromKeychain),
-           !parsed.accessToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        var sawCandidatePayload = false
+
+        // Lite policy: keychain first using prompt-free security CLI read.
+        if let fromSecurityCLI = ClaudeOAuthCredentialsStore.loadFromClaudeKeychainViaSecurityCLIIfEnabled(
+            interaction: ProviderInteractionContext.current,
+            readStrategy: .securityCLIExperimental)
         {
-            return parsed
+            sawCandidatePayload = true
+            if let parsed = try? ClaudeOAuthCredentials.parse(data: fromSecurityCLI),
+               !parsed.accessToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
+                return parsed
+            }
         }
 
-        if let fromFile = try? Self.loadCredentialsFromFile(environment: self.environment),
-           let parsed = try? ClaudeOAuthCredentials.parse(data: fromFile),
-           !parsed.accessToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        // Fallback to the existing OAuth credential resolver (cache + file + prompt-gated keychain logic).
+        if let record = try? ClaudeOAuthCredentialsStore.loadRecord(
+            environment: self.environment,
+            allowKeychainPrompt: false,
+            respectKeychainPromptCooldown: true,
+            allowClaudeKeychainRepairWithoutPrompt: true)
         {
-            return parsed
+            let parsed = record.credentials
+            sawCandidatePayload = true
+            if !parsed.accessToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return parsed
+            }
         }
 
-        if (try? Self.loadCredentialsFromFile(environment: self.environment)) != nil {
+        // File fallback for CLI variants that persist credentials in ~/.claude.
+        for fileURL in Self.credentialFileCandidates(environment: self.environment) {
+            guard let fileData = try? Data(contentsOf: fileURL) else { continue }
+            sawCandidatePayload = true
+            if let parsed = try? ClaudeOAuthCredentials.parse(data: fileData),
+               !parsed.accessToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
+                return parsed
+            }
+        }
+
+        if sawCandidatePayload {
             throw ClaudeLiteFetcherError.invalidCredentials
         }
         throw ClaudeLiteFetcherError.missingCredentials
     }
 
-    private static func loadCredentialsFromFile(environment: [String: String]) throws -> Data {
+    private static func credentialFileCandidates(environment: [String: String]) -> [URL] {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        let base = environment["CLAUDE_CONFIG_DIR"]?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let path = (base?.isEmpty == false ? base! : "\(home.path)/.claude")
-        let fileURL = URL(fileURLWithPath: path).appendingPathComponent(".credentials.json")
-        return try Data(contentsOf: fileURL)
+        let basePath = environment["CLAUDE_CONFIG_DIR"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let root = URL(fileURLWithPath: (basePath?.isEmpty == false ? basePath! : "\(home.path)/.claude"))
+        return [
+            root.appendingPathComponent(".credentials.json"),
+            root.appendingPathComponent("credentials.json"),
+        ]
     }
 
     private static func mapUsage(_ response: OAuthUsageResponse, credentials: ClaudeOAuthCredentials) -> UsageSnapshot {
@@ -72,9 +99,12 @@ struct ClaudeLiteFetcher {
             else {
                 return nil
             }
+            // Anthropic OAuth usage reports monetary values in minor units (for USD, cents).
+            let normalizedUsed = used / 100
+            let normalizedLimit = limit / 100
             return ProviderCostSnapshot(
-                used: used,
-                limit: limit,
+                used: normalizedUsed,
+                limit: normalizedLimit,
                 currencyCode: extra.currency ?? "USD",
                 updatedAt: Date())
         }()
@@ -96,8 +126,7 @@ struct ClaudeLiteFetcher {
 
     private static func makeWindow(_ window: OAuthUsageWindow?) -> RateWindow? {
         guard let window else { return nil }
-        let utilization = window.utilization ?? 0
-        let usedPercent = max(0, min(100, utilization * 100))
+        let usedPercent = Self.normalizeUsedPercent(window.utilization)
         let resetDate = ClaudeOAuthUsageFetcher.parseISO8601Date(window.resetsAt)
         let resetDescription = resetDate.map { UsageFormatter.resetDescription(from: $0) }
         return RateWindow(
@@ -105,5 +134,12 @@ struct ClaudeLiteFetcher {
             windowMinutes: nil,
             resetsAt: resetDate,
             resetDescription: resetDescription)
+    }
+
+    private static func normalizeUsedPercent(_ utilization: Double?) -> Double {
+        guard let utilization else { return 0 }
+        // Anthropic has returned both ratio (0...1) and percent (0...100) formats.
+        let value = utilization <= 1 ? utilization * 100 : utilization
+        return max(0, min(100, value))
     }
 }

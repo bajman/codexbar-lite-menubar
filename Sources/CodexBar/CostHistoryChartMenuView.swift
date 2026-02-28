@@ -132,7 +132,7 @@ struct CostHistoryChartMenuView: View {
     }
 
     private static var selectionBandColor: Color {
-        Color.white.opacity(0.12)
+        Color.secondary.opacity(0.16)
     }
 
     private static func capHeight(maxValue: Double) -> Double {

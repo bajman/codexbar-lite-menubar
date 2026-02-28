@@ -126,7 +126,7 @@ struct CreditsHistoryChartMenuView: View {
 
     private static let barColor = Color(red: 73 / 255, green: 163 / 255, blue: 176 / 255)
     private static var selectionBandColor: Color {
-        Color.white.opacity(0.12)
+        Color.secondary.opacity(0.16)
     }
 
     private static func capHeight(maxValue: Double) -> Double {

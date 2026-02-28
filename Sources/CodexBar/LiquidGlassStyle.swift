@@ -17,9 +17,17 @@ struct MenuGlassBackground: ViewModifier {
                                 cornerRadius: self.cornerRadius, style: .continuous))
                 }
             } else {
-                content
+                content.background(
+                    .regularMaterial,
+                    in: RoundedRectangle(cornerRadius: self.cornerRadius, style: .continuous))
             }
-        } else { content }
+        } else if self.layer != .none {
+            content.background(
+                .regularMaterial,
+                in: RoundedRectangle(cornerRadius: self.cornerRadius, style: .continuous))
+        } else {
+            content
+        }
     }
 }
 

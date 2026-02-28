@@ -6,20 +6,18 @@ extension EnvironmentValues {
 
 enum MenuHighlightStyle {
     static let selectionText = Color(nsColor: .selectedMenuItemTextColor)
-    static let normalPrimaryText = Color(nsColor: .controlTextColor)
-    static let normalSecondaryText = Color(nsColor: .secondaryLabelColor)
 
     static func primary(_ highlighted: Bool) -> Color {
-        highlighted ? self.selectionText : self.normalPrimaryText
+        highlighted ? self.selectionText : .primary
     }
 
     static func secondary(_ highlighted: Bool) -> Color {
-        highlighted ? self.selectionText : self.normalSecondaryText
+        highlighted ? self.selectionText : .secondary
     }
 
     static func glassSecondary(_ highlighted: Bool) -> Color {
         if highlighted { return self.selectionText }
-        return Color(nsColor: .secondaryLabelColor).opacity(0.9)
+        return .secondary
     }
 
     static func error(_ highlighted: Bool) -> Color {

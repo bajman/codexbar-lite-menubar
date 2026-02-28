@@ -146,7 +146,7 @@ struct UsageBreakdownChartMenuView: View {
     }
 
     private static var selectionBandColor: Color {
-        Color.white.opacity(0.12)
+        Color.secondary.opacity(0.16)
     }
 
     private static func makeModel(from breakdown: [OpenAIDashboardDailyBreakdown]) -> Model {

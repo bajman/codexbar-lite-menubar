@@ -71,7 +71,7 @@ struct MenuPanelContentView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .frame(width: self.cardWidth)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .menuGlassBackground(layer: .shell, cornerRadius: 12)
 
         content
     }
@@ -323,7 +323,7 @@ struct MenuPanelContentView: View {
             .padding(.vertical, 4)
             .contentShape(Rectangle())
         }
-        .buttonStyle(MenuPanelActionButtonStyle())
+        .menuPanelActionButtonStyle()
     }
 
     private func executeAction(_ action: MenuDescriptor.MenuAction) {
@@ -384,6 +384,17 @@ private struct MenuPanelActionButtonStyle: ButtonStyle {
             .onHover { hovering in
                 self.isHovered = hovering
             }
+    }
+}
+
+extension View {
+    @ViewBuilder
+    fileprivate func menuPanelActionButtonStyle() -> some View {
+        if #available(macOS 26, *), LiquidGlassAvailability.shouldApplyGlass {
+            self.buttonStyle(.glass)
+        } else {
+            self.buttonStyle(MenuPanelActionButtonStyle())
+        }
     }
 }
 

@@ -1,4 +1,5 @@
 import AppKit
+import CodexBarCore
 import SwiftUI
 
 @MainActor
@@ -6,6 +7,7 @@ final class MenuPanelController {
     private var panel: MenuPanel?
     private var hostingView: NSHostingView<AnyView>?
     private nonisolated(unsafe) var globalClickMonitor: Any?
+    private nonisolated(unsafe) var localClickMonitor: Any?
     private nonisolated(unsafe) var localKeyMonitor: Any?
     private(set) var isShowing = false
     private let contentBuilder: () -> AnyView
@@ -37,17 +39,17 @@ final class MenuPanelController {
             panel = existing
         } else {
             panel = MenuPanel(contentRect: panelRect)
-            panel.onResignKey = { [weak self] in
-                self?.dismiss()
-            }
             self.panel = panel
         }
 
-        panel.contentView = hosting
+        panel.contentView = self.wrapInGlassIfNeeded(hosting)
         self.hostingView = hosting
 
         let origin = self.panelOrigin(relativeTo: button, panelSize: fittingSize)
         panel.setFrameOrigin(origin)
+
+        self.isShowing = true
+        self.installMonitors()
 
         panel.alphaValue = 0
         panel.orderFrontRegardless()
@@ -58,25 +60,27 @@ final class MenuPanelController {
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().alphaValue = 1
         }
-
-        self.isShowing = true
-        self.installMonitors()
     }
 
-    func dismiss() {
+    func dismiss(animated: Bool = true) {
         guard self.isShowing else { return }
         self.isShowing = false
         self.removeMonitors()
 
         guard let panel = self.panel else { return }
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.1
-            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            panel.animator().alphaValue = 0
-        } completionHandler: {
-            Task { @MainActor in
-                panel.orderOut(nil)
+        if animated {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.1
+                context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+                panel.animator().alphaValue = 0
+            } completionHandler: {
+                Task { @MainActor in
+                    panel.orderOut(nil)
+                }
             }
+        } else {
+            panel.alphaValue = 0
+            panel.orderOut(nil)
         }
     }
 
@@ -85,7 +89,7 @@ final class MenuPanelController {
         let content = self.contentBuilder()
         let hosting = NSHostingView(rootView: content)
         hosting.sizingOptions = [.intrinsicContentSize]
-        panel.contentView = hosting
+        panel.contentView = self.wrapInGlassIfNeeded(hosting)
         self.hostingView = hosting
 
         let fittingSize = hosting.fittingSize
@@ -95,6 +99,19 @@ final class MenuPanelController {
         let oldTop = frame.origin.y + panel.frame.size.height
         frame.origin.y = oldTop - fittingSize.height
         panel.setFrame(frame, display: true)
+    }
+
+    // MARK: - Glass Wrapping
+
+    private func wrapInGlassIfNeeded(_ hosting: NSHostingView<AnyView>) -> NSView {
+        if #available(macOS 26, *), LiquidGlassAvailability.shouldApplyGlass {
+            let glass = NSGlassEffectView()
+            glass.style = .regular
+            glass.cornerRadius = 12
+            glass.contentView = hosting
+            return glass
+        }
+        return hosting
     }
 
     // MARK: - Positioning
@@ -140,22 +157,36 @@ final class MenuPanelController {
     // MARK: - Event Monitors
 
     private func installMonitors() {
+        // Clicks delivered to OTHER applications.
         self.globalClickMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown])
-        { [weak self] event in
-            Task { @MainActor in
+        { [weak self] _ in
+            DispatchQueue.main.async {
                 guard let self, self.isShowing else { return }
-                if let panel = self.panel, let eventWindow = event.window, eventWindow == panel {
-                    return
-                }
                 self.dismiss()
             }
+        }
+
+        // Clicks delivered to THIS application but outside the panel.
+        self.localClickMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown])
+        { [weak self] event in
+            guard let self, self.isShowing else { return event }
+            // If the click is inside the panel, let it through normally.
+            if let panel = self.panel, event.window === panel {
+                return event
+            }
+            // Click is in our app but outside the panel (e.g. status bar
+            // icon for toggle) — dismiss synchronously so isShowing is
+            // already false when statusItemClicked fires immediately after.
+            self.dismiss()
+            return event
         }
 
         self.localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             if event.keyCode == 53 { // Escape
-                Task { @MainActor in
+                DispatchQueue.main.async {
                     self.dismiss()
                 }
                 return nil
@@ -169,6 +200,10 @@ final class MenuPanelController {
             NSEvent.removeMonitor(monitor)
             self.globalClickMonitor = nil
         }
+        if let monitor = self.localClickMonitor {
+            NSEvent.removeMonitor(monitor)
+            self.localClickMonitor = nil
+        }
         if let monitor = self.localKeyMonitor {
             NSEvent.removeMonitor(monitor)
             self.localKeyMonitor = nil
@@ -177,6 +212,9 @@ final class MenuPanelController {
 
     deinit {
         if let monitor = self.globalClickMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+        if let monitor = self.localClickMonitor {
             NSEvent.removeMonitor(monitor)
         }
         if let monitor = self.localKeyMonitor {

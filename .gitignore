@@ -37,6 +37,9 @@ debug_*.swift
 docs/*-analysis.md
 docs/.astro/
 
+# Internal brainstorm / design docs
+brainstorm-*.md
+
 # Swift Package Manager metadata (leave sources tracked)
 # Packages/
 # Package.resolved

@@ -54,6 +54,9 @@ struct CodexBarApp: App {
             settings: settings,
             account: account,
             selection: preferencesSelection)
+        // Create the status item synchronously so the icon appears on the very
+        // first launch, without waiting for applicationDidFinishLaunching.
+        self.appDelegate.ensureStatusController()
     }
 
     @SceneBuilder
@@ -65,6 +68,7 @@ struct CodexBarApp: App {
         }
         .defaultSize(width: 20, height: 20)
         .windowStyle(.hiddenTitleBar)
+        .restorationBehavior(.disabled)
 
         Settings {
             PreferencesView(
@@ -187,7 +191,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Bundle.main.url(forResource: "Icon-classic", withExtension: "icns")
     }
 
-    private func ensureStatusController() {
+    func ensureStatusController() {
         if self.statusController != nil { return }
 
         if let store, let settings, let account, let selection = self.preferencesSelection {

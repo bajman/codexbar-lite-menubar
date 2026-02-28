@@ -45,6 +45,7 @@ struct MenuPanelContentView: View {
 
     @State private var switcherSelection: ProviderSwitcherSelection?
     @State private var expandedChart: ExpandedChart?
+    @Environment(\.liquidGlassActive) private var isActive
 
     private enum ExpandedChart: Equatable {
         case usageBreakdown
@@ -71,9 +72,19 @@ struct MenuPanelContentView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .frame(width: self.cardWidth)
-        .menuGlassBackground(layer: .shell, cornerRadius: 12)
+        .menuGlassBackground(layer: .shell, cornerRadius: 12, skipGlassEffect: true)
 
+        #if DEBUG
         content
+            .overlay(alignment: .topLeading) {
+                Circle()
+                    .fill(self.isActive ? Color.green : Color.red)
+                    .frame(width: 8, height: 8)
+                    .padding(6)
+            }
+        #else
+        content
+        #endif
     }
 
     // MARK: - Provider Switcher
@@ -375,9 +386,8 @@ struct MenuPanelContentView: View {
 private struct MenuPanelActionButtonStyle: ViewModifier {
     @Environment(\.liquidGlassActive) private var isActive
 
-    @ViewBuilder
     func body(content: Content) -> some View {
-        if #available(macOS 26, *), self.isActive && LiquidGlassAvailability.shouldApplyGlass {
+        if #available(macOS 26, *), self.isActive, LiquidGlassAvailability.shouldApplyGlass {
             content.buttonStyle(.glass)
         } else {
             content
@@ -386,7 +396,6 @@ private struct MenuPanelActionButtonStyle: ViewModifier {
 }
 
 extension View {
-    @ViewBuilder
     fileprivate func menuPanelActionButtonStyle() -> some View {
         self.modifier(MenuPanelActionButtonStyle())
     }

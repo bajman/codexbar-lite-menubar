@@ -24,9 +24,29 @@ extension StatusItemController {
     func resolvedMenuProvider(enabledProviders: [UsageProvider]? = nil) -> UsageProvider? {
         let enabled = enabledProviders ?? self.store.enabledProviders()
         if enabled.isEmpty { return .codex }
+        // In split-icon mode, honour the icon the user actually clicked.
+        if !self.shouldMergeIcons, let last = self.lastMenuProvider, enabled.contains(last) {
+            #if DEBUG
+            print("[resolvedMenuProvider] split-icon → lastMenuProvider=\(last)")
+            #endif
+            return last
+        }
         if let selected = self.selectedMenuProvider, enabled.contains(selected) {
+            #if DEBUG
+            let message = "[resolvedMenuProvider] fallback → selectedMenuProvider=\(selected), " +
+                "shouldMerge=\(self.shouldMergeIcons), " +
+                "lastMenu=\(String(describing: self.lastMenuProvider)), " +
+                "enabled=\(enabled)"
+            print(message)
+            #endif
             return selected
         }
+        #if DEBUG
+        let message = "[resolvedMenuProvider] default → enabled.first=\(String(describing: enabled.first)), " +
+            "shouldMerge=\(self.shouldMergeIcons), " +
+            "lastMenu=\(String(describing: self.lastMenuProvider))"
+        print(message)
+        #endif
         return enabled.first
     }
 

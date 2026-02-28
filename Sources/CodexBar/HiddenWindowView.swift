@@ -41,6 +41,5 @@ private struct HiddenWindowConfigurator: NSViewRepresentable {
         window.canHide = false
         window.setContentSize(NSSize(width: 1, height: 1))
         window.setFrameOrigin(NSPoint(x: -10000, y: -10000))
-        window.orderOut(nil)
     }
 }

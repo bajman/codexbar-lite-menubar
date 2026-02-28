@@ -2,12 +2,10 @@ import AppKit
 
 @MainActor
 final class MenuPanel: NSPanel {
-    var onResignKey: (() -> Void)?
-
     init(contentRect: NSRect) {
         super.init(
             contentRect: contentRect,
-            styleMask: [.nonactivatingPanel, .fullSizeContentView],
+            styleMask: [.titled, .nonactivatingPanel, .fullSizeContentView],
             backing: .buffered,
             defer: true)
         self.level = .statusBar
@@ -20,6 +18,10 @@ final class MenuPanel: NSPanel {
         self.animationBehavior = .utilityWindow
         self.isReleasedWhenClosed = false
         self.hidesOnDeactivate = false
+        // Prevent the panel from taking the app out of its current activation
+        // state; the global-click + escape monitors handle dismissal instead of
+        // relying on resignKey which fires spuriously for non-activating panels.
+        self.becomesKeyOnlyIfNeeded = true
     }
 
     override var canBecomeKey: Bool {
@@ -30,8 +32,6 @@ final class MenuPanel: NSPanel {
         false
     }
 
-    override func resignKey() {
-        super.resignKey()
-        self.onResignKey?()
-    }
+    // Dismissal is handled by the event monitors in MenuPanelController
+    // rather than resignKey, which fires spuriously for non-activating panels.
 }

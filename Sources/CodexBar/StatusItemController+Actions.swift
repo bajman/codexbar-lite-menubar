@@ -145,6 +145,7 @@ extension StatusItemController {
             button = self.lazyStatusItem(for: provider).button
         }
         guard let button else { return }
+        self.ensurePanelController()
         self.panelController?.toggle(relativeTo: button)
     }
 

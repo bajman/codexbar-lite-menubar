@@ -145,8 +145,12 @@ final class SettingsStore {
         CodexBarLog.setFileLoggingEnabled(self.debugFileLoggingEnabled)
         userDefaults.removeObject(forKey: "showCodexUsage")
         userDefaults.removeObject(forKey: "showClaudeUsage")
-        LaunchAtLoginManager.setEnabled(self.launchAtLogin)
-        self.runInitialProviderDetectionIfNeeded()
+        // Defer heavy work so the status bar icon can appear before these block the main thread.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            LaunchAtLoginManager.setEnabled(self.launchAtLogin)
+            self.runInitialProviderDetectionIfNeeded()
+        }
         self.applyTokenCostDefaultIfNeeded()
         self.claudeWebExtrasEnabled = false
         self.openAIWebAccessEnabled = false

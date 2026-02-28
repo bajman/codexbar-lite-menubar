@@ -1,5 +1,6 @@
 import AppKit
 import CodexBarCore
+import ObjectiveC
 import Observation
 import QuartzCore
 import SwiftUI
@@ -104,6 +105,19 @@ final class StatusItemController: NSObject, StatusItemControlling, MenuPanelActi
         case waitingBrowser
     }
 
+    // MARK: - Associated-Object Provider Tagging
+
+    private static let providerKey = malloc(1)!
+
+    func tagButton(_ button: NSStatusBarButton, provider: UsageProvider) {
+        objc_setAssociatedObject(button, Self.providerKey, provider.rawValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
+
+    func provider(for button: NSStatusBarButton) -> UsageProvider? {
+        guard let raw = objc_getAssociatedObject(button, Self.providerKey) as? String else { return nil }
+        return UsageProvider(rawValue: raw)
+    }
+
     func menuBarMetricWindow(for provider: UsageProvider, snapshot: UsageSnapshot?) -> RateWindow? {
         switch self.settings.menuBarMetricPreference(for: provider) {
         case .primary:
@@ -157,6 +171,19 @@ final class StatusItemController: NSObject, StatusItemControlling, MenuPanelActi
         // Ensure the icon is rendered at 1:1 without resampling (crisper edges for template images).
         item.button?.imageScaling = .scaleNone
         self.statusItem = item
+        // Set a placeholder icon immediately so the status item is visible from the first frame,
+        // even if store state is still loading.
+        let placeholder = IconRenderer.makeIcon(
+            primaryRemaining: nil,
+            weeklyRemaining: nil,
+            creditsRemaining: nil,
+            stale: false,
+            style: .codex,
+            blink: 0,
+            wiggle: 0,
+            tilt: 0)
+        placeholder.isTemplate = true
+        item.button?.image = placeholder
         // Status items for individual providers are now created lazily in updateVisibility()
         super.init()
         self.wireBindings()
@@ -269,7 +296,14 @@ final class StatusItemController: NSObject, StatusItemControlling, MenuPanelActi
             self.lastProviderOrder = self.settings.providerOrder
         }
         if self.settings.mergeIcons != self.lastMergeIcons {
+            let wasMerged = self.lastMergeIcons
             self.lastMergeIcons = self.settings.mergeIcons
+            // When switching from merged → split-icon mode, clear the stale
+            // selectedMenuProvider so it doesn't override per-icon clicks.
+            if wasMerged, !self.settings.mergeIcons {
+                self.selectedMenuProvider = nil
+                self.lastMenuProvider = nil
+            }
         }
         if self.settings.switcherShowsIcons != self.lastSwitcherShowsIcons {
             self.lastSwitcherShowsIcons = self.settings.switcherShowsIcons
@@ -306,6 +340,9 @@ final class StatusItemController: NSObject, StatusItemControlling, MenuPanelActi
         }
         let item = self.statusBar.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.imageScaling = .scaleNone
+        if let button = item.button {
+            self.tagButton(button, provider: provider)
+        }
         self.statusItems[provider] = item
         return item
     }
@@ -391,6 +428,9 @@ final class StatusItemController: NSObject, StatusItemControlling, MenuPanelActi
         for provider in self.settings.orderedProviders() {
             let item = self.statusBar.statusItem(withLength: NSStatusItem.variableLength)
             item.button?.imageScaling = .scaleNone
+            if let button = item.button {
+                self.tagButton(button, provider: provider)
+            }
             self.statusItems[provider] = item
         }
     }
@@ -416,18 +456,48 @@ final class StatusItemController: NSObject, StatusItemControlling, MenuPanelActi
     }
 
     @objc private func statusItemClicked(_ sender: Any?) {
-        // Determine which provider was clicked (for non-merged mode)
+        // Determine which provider was clicked using the associated-object tag
+        // (survives rebuildProviderStatusItems dictionary rebuilds).
+        var clickedProvider: UsageProvider?
         if let button = sender as? NSStatusBarButton {
-            for (provider, item) in self.statusItems where item.button === button {
-                self.lastMenuProvider = provider
-            }
+            clickedProvider = self.provider(for: button)
         }
+
+        #if DEBUG
+        let message = "[statusItemClicked] sender=\(type(of: sender as Any)), " +
+            "clickedProvider=\(String(describing: clickedProvider)), " +
+            "statusItems.keys=\(Array(self.statusItems.keys)), " +
+            "shouldMerge=\(self.shouldMergeIcons)"
+        print(message)
+        #endif
+
+        let previousProvider = self.lastMenuProvider
+        if let clicked = clickedProvider {
+            self.lastMenuProvider = clicked
+        } else if !self.shouldMergeIcons {
+            // Fallback: if the associated-object lookup failed, default to first enabled provider
+            // so lastMenuProvider is never nil in split-icon mode.
+            self.lastMenuProvider = self.store.enabledProviders().first
+        }
+
         guard let button = (sender as? NSStatusBarButton) ?? self.statusItem.button else { return }
         self.ensurePanelController()
-        self.panelController?.toggle(relativeTo: button)
+
+        // In split-icon mode, if the panel is already showing for a different
+        // provider, dismiss immediately (no animation) and re-show for the new one.
+        if let controller = self.panelController,
+           controller.isShowing,
+           clickedProvider != nil,
+           clickedProvider != previousProvider
+        {
+            controller.dismiss(animated: false)
+            controller.show(relativeTo: button)
+        } else {
+            self.panelController?.toggle(relativeTo: button)
+        }
     }
 
-    private func ensurePanelController() {
+    func ensurePanelController() {
         guard self.panelController == nil else { return }
         guard #available(macOS 26, *) else { return }
         self.panelController = MenuPanelController {
@@ -474,6 +544,7 @@ final class StatusItemController: NSObject, StatusItemControlling, MenuPanelActi
                     showAllTokenAccounts: showAll) ?? OpenAIWebContextModel(
                     hasUsageBreakdown: false, hasCreditsHistory: false, hasCostHistory: false)
             })
+            .environment(\.liquidGlassActive, LiquidGlassAvailability.shouldApplyGlass)
     }
 
     func dismissPanel() {

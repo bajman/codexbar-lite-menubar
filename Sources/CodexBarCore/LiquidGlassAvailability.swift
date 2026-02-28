@@ -30,9 +30,13 @@ public enum LiquidGlassAvailability: Sendable {
 
     #if canImport(AppKit)
     public static var shouldApplyGlass: Bool {
+        #if DEBUG
+        return true
+        #else
         guard #available(macOS 26.4, *) else { return false }
         return isGlassEnabled()
             && !NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+        #endif
     }
     #else
     public static var shouldApplyGlass: Bool {
@@ -43,11 +47,11 @@ public enum LiquidGlassAvailability: Sendable {
 
 #if canImport(SwiftUI)
 public struct LiquidGlassActiveKey: EnvironmentKey {
-    public static let defaultValue = false
+    public static let defaultValue = LiquidGlassAvailability.shouldApplyGlass
 }
 
-public extension EnvironmentValues {
-    var liquidGlassActive: Bool {
+extension EnvironmentValues {
+    public var liquidGlassActive: Bool {
         get { self[LiquidGlassActiveKey.self] }
         set { self[LiquidGlassActiveKey.self] = newValue }
     }

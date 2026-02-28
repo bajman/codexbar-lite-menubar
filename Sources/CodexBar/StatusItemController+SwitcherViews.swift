@@ -78,7 +78,7 @@ struct GlassProviderSwitcherView: View {
         let isSelected = self.selected == segment.selection
         let isHovered = self.hoveredSelection == segment.selection
 
-        Button {
+        return Button {
             self.onSelect(segment.selection)
         } label: {
             VStack(spacing: stacked ? 2 : 0) {
@@ -126,11 +126,13 @@ struct GlassProviderSwitcherView: View {
     private func segmentIcon(_ icon: SegmentIcon) -> some View {
         switch icon {
         case let .system(name):
-            Image(systemName: name)
-                .imageScale(.small)
+            return AnyView(
+                Image(systemName: name)
+                    .imageScale(.small))
         case let .nsImage(image):
-            Image(nsImage: image)
-                .renderingMode(.template)
+            return AnyView(
+                Image(nsImage: image)
+                    .renderingMode(.template))
         }
     }
 
@@ -206,7 +208,7 @@ struct GlassTokenAccountSwitcherView: View {
         let isSelected = index == self.selectedIndex
         let isHovered = self.hoveredIndex == index
 
-        Button {
+        return Button {
             self.onSelect(index)
         } label: {
             Text(account.displayName)

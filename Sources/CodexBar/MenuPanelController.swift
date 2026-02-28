@@ -5,12 +5,12 @@ import SwiftUI
 final class MenuPanelController {
     private var panel: MenuPanel?
     private var hostingView: NSHostingView<AnyView>?
-    nonisolated(unsafe) private var globalClickMonitor: Any?
-    nonisolated(unsafe) private var localKeyMonitor: Any?
+    private nonisolated(unsafe) var globalClickMonitor: Any?
+    private nonisolated(unsafe) var localKeyMonitor: Any?
     private(set) var isShowing = false
     private let contentBuilder: () -> AnyView
 
-    init<Content: View>(@ViewBuilder content: @escaping () -> Content) {
+    init(@ViewBuilder content: @escaping () -> some View) {
         self.contentBuilder = { AnyView(content()) }
     }
 
@@ -69,15 +69,15 @@ final class MenuPanelController {
         self.removeMonitors()
 
         guard let panel = self.panel else { return }
-        NSAnimationContext.runAnimationGroup({ context in
+        NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.1
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             panel.animator().alphaValue = 0
-        }, completionHandler: {
+        } completionHandler: {
             Task { @MainActor in
                 panel.orderOut(nil)
             }
-        })
+        }
     }
 
     func updateContent() {

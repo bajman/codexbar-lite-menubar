@@ -18,7 +18,7 @@ enum MenuHighlightStyle {
     }
 
     static func glassSecondary(_ highlighted: Bool) -> Color {
-        if highlighted { return selectionText }
+        if highlighted { return self.selectionText }
         return Color(nsColor: .secondaryLabelColor).opacity(0.9)
     }
 

@@ -30,12 +30,29 @@ public enum Browser: String, CaseIterable, Sendable, Hashable {
         []
     }
 
-    var appBundleName: String? { nil }
-    var chromiumProfileRelativePath: String? { nil }
-    var geckoProfilesFolder: String? { nil }
-    var usesGeckoProfileStore: Bool { false }
-    var usesChromiumProfileStore: Bool { false }
-    var usesKeychainForCookieDecryption: Bool { false }
+    var appBundleName: String? {
+        nil
+    }
+
+    var chromiumProfileRelativePath: String? {
+        nil
+    }
+
+    var geckoProfilesFolder: String? {
+        nil
+    }
+
+    var usesGeckoProfileStore: Bool {
+        false
+    }
+
+    var usesChromiumProfileStore: Bool {
+        false
+    }
+
+    var usesKeychainForCookieDecryption: Bool {
+        false
+    }
 }
 
 public typealias BrowserCookieImportOrder = [Browser]

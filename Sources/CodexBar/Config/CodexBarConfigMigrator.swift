@@ -2,7 +2,7 @@ import CodexBarCore
 import Foundation
 
 struct CodexBarConfigMigrator {
-    // Retained for initializer/source compatibility; lite migration no longer imports secrets.
+    /// Retained for initializer/source compatibility; lite migration no longer imports secrets.
     struct LegacyStores {
         let zaiTokenStore: any ZaiTokenStoring
         let syntheticTokenStore: any SyntheticTokenStoring

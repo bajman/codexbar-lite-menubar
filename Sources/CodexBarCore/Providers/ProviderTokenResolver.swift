@@ -21,7 +21,9 @@ public enum ProviderTokenResolver {
         nil
     }
 
-    public static func syntheticToken(environment _: [String: String] = ProcessInfo.processInfo.environment) -> String? {
+    public static func syntheticToken(environment _: [String: String] = ProcessInfo.processInfo
+        .environment) -> String?
+    {
         nil
     }
 

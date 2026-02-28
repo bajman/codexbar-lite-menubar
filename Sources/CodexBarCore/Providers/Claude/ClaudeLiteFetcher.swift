@@ -7,9 +7,9 @@ private enum ClaudeLiteFetcherError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .missingCredentials:
-            return "Claude credentials not found. Run `claude login`."
+            "Claude credentials not found. Run `claude login`."
         case .invalidCredentials:
-            return "Claude credentials are invalid. Run `claude login`."
+            "Claude credentials are invalid. Run `claude login`."
         }
     }
 }

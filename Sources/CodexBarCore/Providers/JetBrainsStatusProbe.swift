@@ -103,8 +103,8 @@ public enum JetBrainsStatusProbe {
     }
 }
 
-private extension JetBrainsStatusProbe {
-    static func extractOptionValue(from xml: String, optionName: String) -> String? {
+extension JetBrainsStatusProbe {
+    fileprivate static func extractOptionValue(from xml: String, optionName: String) -> String? {
         let patterns: [String] = [
             #"<option[^>]*name\s*=\s*["']\#(optionName)["'][^>]*value\s*=\s*["']([^"']*)["'][^>]*>"#,
             #"<option[^>]*value\s*=\s*["']([^"']*)["'][^>]*name\s*=\s*["']\#(optionName)["'][^>]*>"#,
@@ -124,7 +124,7 @@ private extension JetBrainsStatusProbe {
         return nil
     }
 
-    static func decodeEntities(_ value: String) -> String {
+    fileprivate static func decodeEntities(_ value: String) -> String {
         var decoded = value
         decoded = decoded.replacingOccurrences(of: "&#10;", with: "\n")
         decoded = decoded.replacingOccurrences(of: "&quot;", with: "\"")
@@ -135,13 +135,13 @@ private extension JetBrainsStatusProbe {
         return decoded
     }
 
-    static func stringValue(_ any: Any?) -> String? {
+    fileprivate static func stringValue(_ any: Any?) -> String? {
         if let string = any as? String { return string }
         if let number = any as? NSNumber { return number.stringValue }
         return nil
     }
 
-    static func doubleValue(_ any: Any?) -> Double? {
+    fileprivate static func doubleValue(_ any: Any?) -> Double? {
         if let number = any as? NSNumber { return number.doubleValue }
         if let string = any as? String { return Double(string) }
         return nil

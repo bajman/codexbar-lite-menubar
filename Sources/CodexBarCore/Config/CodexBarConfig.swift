@@ -149,7 +149,7 @@ public struct ProviderConfig: Codable, Sendable, Identifiable {
         self.tokenAccounts = nil
     }
 
-    // Lite contract: persist only id/enabled/source.
+    /// Lite contract: persist only id/enabled/source.
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(self.id, forKey: .id)

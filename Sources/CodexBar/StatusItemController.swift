@@ -472,7 +472,7 @@ final class StatusItemController: NSObject, StatusItemControlling, MenuPanelActi
                 self?.openAIWebContextModel(
                     currentProvider: provider,
                     showAllTokenAccounts: showAll) ?? OpenAIWebContextModel(
-                        hasUsageBreakdown: false, hasCreditsHistory: false, hasCostHistory: false)
+                    hasUsageBreakdown: false, hasCreditsHistory: false, hasCostHistory: false)
             })
     }
 

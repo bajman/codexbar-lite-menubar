@@ -4,6 +4,7 @@ import KeyboardShortcuts
 import Observation
 import QuartzCore
 import SwiftUI
+
 @main
 struct CodexBarApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -81,7 +82,6 @@ struct CodexBarApp: App {
         NSApp.activate(ignoringOtherApps: true)
         _ = NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
     }
-
 }
 
 // MARK: - Updater abstraction

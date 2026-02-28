@@ -10,8 +10,8 @@ public enum LiquidGlassLayer: String, Codable, Sendable {
 
 public enum LiquidGlassAvailability: Sendable {
     public static func isGlassEnabled(
-        defaults: UserDefaults? = .standard
-    ) -> Bool {
+        defaults: UserDefaults? = .standard) -> Bool
+    {
         guard let defaults else { return true }
         if defaults.object(forKey: "liquidGlassEnabled") == nil { return true }
         return defaults.bool(forKey: "liquidGlassEnabled")
@@ -23,6 +23,8 @@ public enum LiquidGlassAvailability: Sendable {
             && !NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
     }
     #else
-    public static var shouldApplyGlass: Bool { isGlassEnabled() }
+    public static var shouldApplyGlass: Bool {
+        isGlassEnabled()
+    }
     #endif
 }

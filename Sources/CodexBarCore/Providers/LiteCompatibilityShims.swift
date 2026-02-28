@@ -239,7 +239,12 @@ public struct OpenRouterUsageSnapshot: Codable, Sendable {
     }
 }
 
-public extension UsageSnapshot {
-    var zaiUsage: ZaiUsageSnapshot? { nil }
-    var openRouterUsage: OpenRouterUsageSnapshot? { nil }
+extension UsageSnapshot {
+    public var zaiUsage: ZaiUsageSnapshot? {
+        nil
+    }
+
+    public var openRouterUsage: OpenRouterUsageSnapshot? {
+        nil
+    }
 }

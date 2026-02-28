@@ -17,8 +17,6 @@ struct GlassProviderSwitcherView: View {
     let weeklyRemainingProvider: (UsageProvider) -> Double?
     let onSelect: (ProviderSwitcherSelection) -> Void
 
-    @State private var hoveredSelection: ProviderSwitcherSelection?
-
     private var segments: [Segment] {
         var result: [Segment] = []
         if self.includesOverview {
@@ -26,101 +24,60 @@ struct GlassProviderSwitcherView: View {
                 selection: .overview,
                 title: "Overview",
                 icon: .system("square.grid.2x2"),
-                weeklyRemaining: nil,
-                brandColor: nil))
+                weeklyRemaining: nil))
         }
         for provider in self.providers {
             let descriptor = ProviderDescriptorRegistry.descriptor(for: provider)
             let nsImage = self.iconProvider(provider)
             nsImage.isTemplate = true
             nsImage.size = NSSize(width: 16, height: 16)
-            let branding = descriptor.branding.color
             result.append(Segment(
                 selection: .provider(provider),
                 title: descriptor.metadata.displayName,
                 icon: .nsImage(nsImage),
-                weeklyRemaining: self.weeklyRemainingProvider(provider),
-                brandColor: Color(
-                    red: branding.red,
-                    green: branding.green,
-                    blue: branding.blue)))
+                weeklyRemaining: self.weeklyRemainingProvider(provider)))
         }
         return result
     }
 
-    private var useGrid: Bool {
-        self.segments.count > 3
-    }
-
     var body: some View {
         let allSegments = self.segments
-        if self.useGrid {
-            let columns = Array(
-                repeating: GridItem(.flexible(), spacing: 4),
-                count: gridColumnCount(total: allSegments.count))
-            LazyVGrid(columns: columns, spacing: 4) {
+        VStack(spacing: 4) {
+            Picker("Provider", selection: Binding(
+                get: { self.selected ?? allSegments.first?.selection ?? .provider(.codex) },
+                set: { self.onSelect($0) }))
+            {
                 ForEach(allSegments, id: \.selection) { segment in
-                    self.segmentButton(segment, stacked: self.showsIcons)
+                    if self.showsIcons {
+                        Label {
+                            Text(segment.shortTitle)
+                        } icon: {
+                            self.segmentIcon(segment.icon)
+                        }
+                        .tag(segment.selection)
+                    } else {
+                        Text(segment.shortTitle)
+                            .tag(segment.selection)
+                    }
                 }
             }
-            .padding(.horizontal, 6)
-        } else {
-            HStack(spacing: 4) {
-                ForEach(allSegments, id: \.selection) { segment in
-                    self.segmentButton(segment, stacked: false)
+            .labelsHidden()
+            .pickerStyle(.segmented)
+
+            if case let .provider(provider) = (self.selected ?? allSegments.first?.selection),
+               let weeklyRemaining = self.weeklyRemainingProvider(provider)
+            {
+                HStack {
+                    Text("Weekly")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(String(format: "%.0f%% left", max(0, min(100, weeklyRemaining))))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
-            .padding(.horizontal, 6)
         }
-    }
-
-    private func segmentButton(_ segment: Segment, stacked: Bool) -> some View {
-        let isSelected = self.selected == segment.selection
-        let isHovered = self.hoveredSelection == segment.selection
-
-        return Button {
-            self.onSelect(segment.selection)
-        } label: {
-            VStack(spacing: stacked ? 2 : 0) {
-                if stacked {
-                    self.stackedContent(segment)
-                } else {
-                    self.inlineContent(segment)
-                }
-                self.weeklyIndicator(segment: segment, isSelected: isSelected)
-            }
-        }
-        .glassSegmentStyle(isSelected: isSelected, isHovered: isHovered)
-        .onHover { hovering in
-            self.hoveredSelection = hovering ? segment.selection : nil
-        }
-    }
-
-    private func inlineContent(_ segment: Segment) -> some View {
-        HStack(spacing: 4) {
-            if self.showsIcons {
-                self.segmentIcon(segment.icon)
-                    .frame(width: 16, height: 16)
-            }
-            Text(segment.title)
-                .font(.system(size: NSFont.smallSystemFontSize))
-                .lineLimit(1)
-        }
-        .padding(.horizontal, 7)
-        .padding(.vertical, 4)
-    }
-
-    private func stackedContent(_ segment: Segment) -> some View {
-        VStack(spacing: 0) {
-            self.segmentIcon(segment.icon)
-                .frame(width: 16, height: 16)
-            Text(segment.title)
-                .font(.system(size: NSFont.smallSystemFontSize - 2))
-                .lineLimit(self.segments.count > 8 ? 2 : 1)
-                .multilineTextAlignment(.center)
-        }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 2)
     }
 
     private func segmentIcon(_ icon: SegmentIcon) -> some View {
@@ -136,38 +93,6 @@ struct GlassProviderSwitcherView: View {
         }
     }
 
-    @ViewBuilder
-    private func weeklyIndicator(segment: Segment, isSelected: Bool) -> some View {
-        if let remaining = segment.weeklyRemaining, !isSelected {
-            let ratio = CGFloat(max(0, min(1, remaining / 100)))
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(Color.secondary.opacity(0.22))
-                    Capsule()
-                        .fill(segment.brandColor ?? Color.secondary)
-                        .frame(width: geometry.size.width * ratio)
-                }
-            }
-            .frame(height: 4)
-            .padding(.horizontal, 6)
-            .padding(.bottom, 1)
-        } else {
-            // Reserve space so layout doesn't shift when selecting.
-            Color.clear
-                .frame(height: 4)
-                .padding(.horizontal, 6)
-                .padding(.bottom, 1)
-                .opacity(segment.weeklyRemaining != nil ? 0 : 0)
-        }
-    }
-
-    private func gridColumnCount(total: Int) -> Int {
-        if total <= 4 { return 2 }
-        if total <= 6 { return 3 }
-        if total <= 9 { return 3 }
-        return 4
-    }
 }
 
 // MARK: - GlassTokenAccountSwitcherView
@@ -232,7 +157,13 @@ private struct Segment {
     let title: String
     let icon: SegmentIcon
     let weeklyRemaining: Double?
-    let brandColor: Color?
+
+    var shortTitle: String {
+        if self.selection == .overview {
+            return "All"
+        }
+        return self.title
+    }
 }
 
 private enum SegmentIcon {

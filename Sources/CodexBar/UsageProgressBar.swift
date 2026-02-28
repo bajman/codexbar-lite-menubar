@@ -51,7 +51,7 @@ struct UsageProgressBar: View {
             let needsPunchCompositing = showTip
             let bar = ZStack(alignment: .leading) {
                 Capsule()
-                    .fill(Color.white.opacity(0.12))
+                    .fill(Color.secondary.opacity(0.18))
                 self.actualBar(width: fillWidth)
                 if showTip {
                     self.paceTip(width: tipWidth)
@@ -70,36 +70,15 @@ struct UsageProgressBar: View {
                 bar
             }
         }
-        .frame(height: 8)
+        .frame(height: 6)
         .accessibilityLabel(self.accessibilityLabel)
         .accessibilityValue("\(Int(self.clamped)) percent")
     }
 
     private func actualBar(width: CGFloat) -> some View {
         Capsule()
-            .fill(
-                LinearGradient(
-                    colors: [self.tint.opacity(0.65), self.tint],
-                    startPoint: .top,
-                    endPoint: .bottom))
+            .fill(self.tint.opacity(0.9))
             .frame(width: width)
-            .overlay {
-                Capsule()
-                    .fill(
-                        LinearGradient(
-                            stops: [
-                                .init(color: Color.white.opacity(0.35), location: 0.0),
-                                .init(color: Color.white.opacity(0.08), location: 0.5),
-                                .init(color: .clear, location: 1.0),
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom))
-                    .frame(height: 4)
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    .clipShape(Capsule())
-                    .allowsHitTesting(false)
-            }
-            .shadow(color: self.tint.opacity(0.35), radius: 3, y: 1)
             .contentShape(Rectangle())
             .allowsHitTesting(false)
     }

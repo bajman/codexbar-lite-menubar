@@ -102,6 +102,24 @@ struct MenuDescriptor {
         return MenuDescriptor(sections: sections)
     }
 
+    static func buildActionAndMetaSections(
+        provider: UsageProvider?,
+        store: UsageStore,
+        account: AccountInfo,
+        updateReady: Bool,
+        includeContextualActions: Bool = true) -> [Section]
+    {
+        var sections: [Section] = []
+        if includeContextualActions {
+            let actions = Self.actionsSection(for: provider, store: store, account: account)
+            if !actions.entries.isEmpty {
+                sections.append(actions)
+            }
+        }
+        sections.append(Self.metaSection(updateReady: updateReady))
+        return sections
+    }
+
     private static func usageSection(
         for provider: UsageProvider,
         store: UsageStore,

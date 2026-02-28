@@ -302,22 +302,22 @@ private struct ProviderCostContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(self.section.title)
-                .font(.body)
-                .fontWeight(.medium)
+            HStack(alignment: .firstTextBaseline) {
+                Text(self.section.title)
+                    .font(.body)
+                    .fontWeight(.medium)
+                Spacer()
+                Text(String(format: "%.0f%% used", min(100, max(0, self.section.percentUsed))))
+                    .font(.footnote)
+                    .foregroundStyle(MenuHighlightStyle.secondary(self.isHighlighted))
+            }
             UsageProgressBar(
                 percent: self.section.percentUsed,
                 tint: self.progressColor,
                 accessibilityLabel: "Extra usage spent")
-            HStack(alignment: .firstTextBaseline) {
-                Text(self.section.spendLine)
-                    .font(.footnote)
-                Spacer()
-                MenuGlassMetricPill(
-                    text: String(format: "%.0f%% used", min(100, max(0, self.section.percentUsed))),
-                    color: self.progressColor,
-                    emphasized: false)
-            }
+            Text(self.section.spendLine)
+                .font(.footnote)
+                .foregroundStyle(MenuHighlightStyle.secondary(self.isHighlighted))
         }
     }
 }
@@ -330,51 +330,47 @@ private struct MetricRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(self.title)
-                .font(.body)
-                .fontWeight(.medium)
+            HStack(alignment: .firstTextBaseline) {
+                Text(self.title)
+                    .font(.body)
+                    .fontWeight(.medium)
+                Spacer()
+                Text(self.metric.percentLabel)
+                    .font(.footnote)
+                    .foregroundStyle(MenuHighlightStyle.secondary(self.isHighlighted))
+            }
             UsageProgressBar(
                 percent: self.metric.percent,
                 tint: self.progressColor,
                 accessibilityLabel: self.metric.percentStyle.accessibilityLabel,
                 pacePercent: self.metric.pacePercent,
                 paceOnTop: self.metric.paceOnTop)
-            VStack(alignment: .leading, spacing: 2) {
+            if let rightLabel = self.metric.resetText {
+                Text(rightLabel)
+                    .font(.caption)
+                    .foregroundStyle(MenuHighlightStyle.secondary(self.isHighlighted))
+                    .lineLimit(1)
+            }
+            if self.metric.detailLeftText != nil || self.metric.detailRightText != nil {
                 HStack(alignment: .firstTextBaseline) {
-                    MenuGlassMetricPill(
-                        text: self.metric.percentLabel,
-                        color: self.progressColor,
-                        emphasized: true)
+                    if let detailLeft = self.metric.detailLeftText {
+                        Text(detailLeft)
+                            .font(.footnote)
+                            .foregroundStyle(MenuHighlightStyle.primary(self.isHighlighted))
+                            .lineLimit(1)
+                    }
                     Spacer()
-                    if let rightLabel = self.metric.resetText {
-                        Text(rightLabel)
+                    if let detailRight = self.metric.detailRightText {
+                        Text(detailRight)
                             .font(.footnote)
                             .foregroundStyle(MenuHighlightStyle.secondary(self.isHighlighted))
                             .lineLimit(1)
                     }
                 }
-                if self.metric.detailLeftText != nil || self.metric.detailRightText != nil {
-                    HStack(alignment: .firstTextBaseline) {
-                        if let detailLeft = self.metric.detailLeftText {
-                            Text(detailLeft)
-                                .font(.footnote)
-                                .foregroundStyle(MenuHighlightStyle.primary(self.isHighlighted))
-                                .lineLimit(1)
-                        }
-                        Spacer()
-                        if let detailRight = self.metric.detailRightText {
-                            Text(detailRight)
-                                .font(.footnote)
-                                .foregroundStyle(MenuHighlightStyle.secondary(self.isHighlighted))
-                                .lineLimit(1)
-                        }
-                    }
-                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
             if let detail = self.metric.detailText {
                 Text(detail)
-                    .font(.footnote)
+                    .font(.caption)
                     .foregroundStyle(MenuHighlightStyle.secondary(self.isHighlighted))
                     .lineLimit(1)
             }
@@ -1068,46 +1064,6 @@ extension UsageMenuCardView.Model {
         now: Date) -> String?
     {
         UsageFormatter.resetLine(for: window, style: style, now: now)
-    }
-}
-
-// MARK: - Glass Metric Pill
-
-private struct MenuGlassMetricPill: View {
-    let text: String
-    let color: Color
-    let emphasized: Bool
-    @Environment(\.menuItemHighlighted) private var isHighlighted
-
-    var body: some View {
-        let shouldGlass = LiquidGlassAvailability.shouldApplyGlass && !self.isHighlighted
-        if shouldGlass {
-            if #available(macOS 26, *) {
-                Text(self.text)
-                    .font(.footnote)
-                    .fontWeight(self.emphasized ? .semibold : .regular)
-                    .fontDesign(.rounded)
-                    .foregroundStyle(self.emphasized ? .primary : .secondary)
-                    .lineLimit(1)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .glassEffect(
-                        self.emphasized
-                            ? .regular.tint(self.color)
-                            : .regular,
-                        in: Capsule())
-            } else {
-                self.plainText
-            }
-        } else {
-            self.plainText
-        }
-    }
-
-    private var plainText: some View {
-        Text(self.text)
-            .font(.footnote)
-            .lineLimit(1)
     }
 }
 

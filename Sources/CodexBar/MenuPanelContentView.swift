@@ -71,12 +71,7 @@ struct MenuPanelContentView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .frame(width: self.cardWidth)
-        .fontDesign(.rounded)
-        .background {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(.clear)
-                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        }
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
 
         content
     }
@@ -252,20 +247,19 @@ struct MenuPanelContentView: View {
         let isOverview = self.switcherSelection == .overview
         let currentProvider = self.resolvedCurrentProvider(
             enabledProviders: enabledProviders, isOverview: isOverview)
-        let descriptor = MenuDescriptor.build(
+        let sections = MenuDescriptor.buildActionAndMetaSections(
             provider: currentProvider,
             store: self.store,
-            settings: self.settings,
             account: self.account,
             updateReady: self.updater.updateStatus.isUpdateReady,
             includeContextualActions: !isOverview)
 
         VStack(spacing: 2) {
-            ForEach(Array(descriptor.sections.enumerated()), id: \.offset) { sectionIndex, section in
+            ForEach(Array(sections.enumerated()), id: \.offset) { sectionIndex, section in
                 ForEach(Array(section.entries.enumerated()), id: \.offset) { _, entry in
                     self.entryView(entry)
                 }
-                if sectionIndex < descriptor.sections.count - 1 {
+                if sectionIndex < sections.count - 1 {
                     Divider()
                         .padding(.horizontal, 4)
                         .padding(.vertical, 2)

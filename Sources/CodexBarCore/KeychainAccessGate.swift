@@ -3,6 +3,7 @@ import Foundation
 public enum KeychainAccessGate {
     private static let flagKey = "debugDisableKeychainAccess"
     private static let appGroupID = "group.com.steipete.codexbar"
+    private static let appGroupEnabledInfoKey = "CodexAppGroupEnabled"
     @TaskLocal private static var taskOverrideValue: Bool?
     private nonisolated(unsafe) static var overrideValue: Bool?
 
@@ -11,7 +12,8 @@ public enum KeychainAccessGate {
             if let taskOverrideValue { return taskOverrideValue }
             if let overrideValue { return overrideValue }
             if UserDefaults.standard.bool(forKey: Self.flagKey) { return true }
-            if let shared = UserDefaults(suiteName: Self.appGroupID),
+            if Self.appGroupEnabledByConfiguration(),
+               let shared = UserDefaults(suiteName: Self.appGroupID),
                shared.bool(forKey: Self.flagKey)
             {
                 return true
@@ -40,5 +42,14 @@ public enum KeychainAccessGate {
         try await self.$taskOverrideValue.withValue(disabled) {
             try await operation()
         }
+    }
+
+    private static func appGroupEnabledByConfiguration() -> Bool {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: self.appGroupEnabledInfoKey) else {
+            return true
+        }
+        if let boolValue = value as? Bool { return boolValue }
+        if let numberValue = value as? NSNumber { return numberValue.boolValue }
+        return true
     }
 }

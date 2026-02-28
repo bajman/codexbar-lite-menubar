@@ -22,8 +22,9 @@ struct CodexBarSwitcherWidget: Widget {
             CodexBarSwitcherWidgetView(entry: entry)
         }
         .configurationDisplayName("CodexBar Switcher")
-        .description("Usage widget with a provider switcher.")
+        .description("Switch between Codex and Claude usage at a glance.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+        .contentMarginsDisabled()
     }
 }
 
@@ -31,16 +32,16 @@ struct CodexBarUsageWidget: Widget {
     private let kind = "CodexBarUsageWidget"
 
     var body: some WidgetConfiguration {
-        AppIntentConfiguration(
+        StaticConfiguration(
             kind: self.kind,
-            intent: ProviderSelectionIntent.self,
             provider: CodexBarTimelineProvider())
         { entry in
             CodexBarUsageWidgetView(entry: entry)
         }
         .configurationDisplayName("CodexBar Usage")
-        .description("Session and weekly usage with credits and costs.")
+        .description("CodexBar-style session and weekly meters for one provider.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+        .contentMarginsDisabled()
     }
 }
 
@@ -48,9 +49,8 @@ struct CodexBarHistoryWidget: Widget {
     private let kind = "CodexBarHistoryWidget"
 
     var body: some WidgetConfiguration {
-        AppIntentConfiguration(
+        StaticConfiguration(
             kind: self.kind,
-            intent: ProviderSelectionIntent.self,
             provider: CodexBarTimelineProvider())
         { entry in
             CodexBarHistoryWidgetView(entry: entry)
@@ -58,6 +58,7 @@ struct CodexBarHistoryWidget: Widget {
         .configurationDisplayName("CodexBar History")
         .description("Usage history chart with recent totals.")
         .supportedFamilies([.systemMedium, .systemLarge])
+        .contentMarginsDisabled()
     }
 }
 
@@ -65,9 +66,8 @@ struct CodexBarCompactWidget: Widget {
     private let kind = "CodexBarCompactWidget"
 
     var body: some WidgetConfiguration {
-        AppIntentConfiguration(
+        StaticConfiguration(
             kind: self.kind,
-            intent: CompactMetricSelectionIntent.self,
             provider: CodexBarCompactTimelineProvider())
         { entry in
             CodexBarCompactWidgetView(entry: entry)
@@ -75,5 +75,6 @@ struct CodexBarCompactWidget: Widget {
         .configurationDisplayName("CodexBar Metric")
         .description("Compact widget for credits or cost.")
         .supportedFamilies([.systemSmall])
+        .contentMarginsDisabled()
     }
 }

@@ -130,6 +130,7 @@ APP_GROUP_ID="group.com.steipete.codexbar"
 if [[ "$BUNDLE_ID" == *".debug"* ]]; then
   APP_GROUP_ID="group.com.steipete.codexbar.debug"
 fi
+APP_GROUP_ENABLED=1
 ENTITLEMENTS_DIR="$ROOT/.build/entitlements"
 APP_ENTITLEMENTS="${ENTITLEMENTS_DIR}/CodexBar.entitlements"
 WIDGET_ENTITLEMENTS="${ENTITLEMENTS_DIR}/CodexBarWidget.entitlements"
@@ -143,10 +144,13 @@ cat > "$APP_ENTITLEMENTS" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    $(if [[ "$APP_GROUP_ENABLED" == "1" ]]; then cat <<EOF
     <key>com.apple.security.application-groups</key>
     <array>
         <string>${APP_GROUP_ID}</string>
     </array>
+EOF
+    fi)
     $(if [[ "$ALLOW_LLDB" == "1" ]]; then echo "    <key>com.apple.security.get-task-allow</key><true/>"; fi)
 </dict>
 </plist>
@@ -158,10 +162,13 @@ cat > "$WIDGET_ENTITLEMENTS" <<PLIST
 <dict>
     <key>com.apple.security.app-sandbox</key>
     <true/>
+    $(if [[ "$APP_GROUP_ENABLED" == "1" ]]; then cat <<EOF
     <key>com.apple.security.application-groups</key>
     <array>
         <string>${APP_GROUP_ID}</string>
     </array>
+EOF
+    fi)
 </dict>
 </plist>
 PLIST
@@ -183,9 +190,20 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
     <key>CFBundleIconFile</key><string>Icon</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key><string>${BUNDLE_ID}.deeplink</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>codexbar</string>
+            </array>
+        </dict>
+    </array>
     <key>NSHumanReadableCopyright</key><string>© 2025 Peter Steinberger. MIT License.</string>
     <key>CodexBuildTimestamp</key><string>${BUILD_TIMESTAMP}</string>
     <key>CodexGitCommit</key><string>${GIT_COMMIT}</string>
+    <key>CodexAppGroupEnabled</key><$(if [[ "$APP_GROUP_ENABLED" == "1" ]]; then echo "true"; else echo "false"; fi)/>
 </dict>
 </plist>
 PLIST
@@ -281,6 +299,7 @@ if [[ -n "$(resolve_binary_path "CodexBarWidget" "${ARCH_LIST[0]}")" ]]; then
     <key>CFBundleShortVersionString</key><string>${MARKETING_VERSION}</string>
     <key>CFBundleVersion</key><string>${BUILD_NUMBER}</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>CodexAppGroupEnabled</key><$(if [[ "$APP_GROUP_ENABLED" == "1" ]]; then echo "true"; else echo "false"; fi)/>
     <key>NSExtension</key>
     <dict>
         <key>NSExtensionPointIdentifier</key><string>com.apple.widgetkit-extension</string>
@@ -333,7 +352,7 @@ find "$APP" -name '._*' -delete
 
 if [[ "$SIGNING_MODE" == "adhoc" ]]; then
   CODESIGN_ID="-"
-  CODESIGN_ARGS=(--force --sign "$CODESIGN_ID")
+  CODESIGN_ARGS=(--force --sign "$CODESIGN_ID" --options linker-signed)
 elif [[ "$ALLOW_LLDB" == "1" ]]; then
   CODESIGN_ID="-"
   CODESIGN_ARGS=(--force --sign "$CODESIGN_ID")

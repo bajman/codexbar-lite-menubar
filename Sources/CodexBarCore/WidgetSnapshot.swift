@@ -68,17 +68,25 @@ public struct WidgetSnapshot: Codable, Sendable {
 
     public let entries: [ProviderEntry]
     public let enabledProviders: [UsageProvider]
+    public let usageBarsShowUsed: Bool
     public let generatedAt: Date
 
-    public init(entries: [ProviderEntry], enabledProviders: [UsageProvider]? = nil, generatedAt: Date) {
+    public init(
+        entries: [ProviderEntry],
+        enabledProviders: [UsageProvider]? = nil,
+        usageBarsShowUsed: Bool = false,
+        generatedAt: Date)
+    {
         self.entries = entries
         self.enabledProviders = enabledProviders ?? entries.map(\.provider)
+        self.usageBarsShowUsed = usageBarsShowUsed
         self.generatedAt = generatedAt
     }
 
     private enum CodingKeys: String, CodingKey {
         case entries
         case enabledProviders
+        case usageBarsShowUsed
         case generatedAt
     }
 
@@ -88,12 +96,14 @@ public struct WidgetSnapshot: Codable, Sendable {
         self.generatedAt = try container.decode(Date.self, forKey: .generatedAt)
         self.enabledProviders = try container.decodeIfPresent([UsageProvider].self, forKey: .enabledProviders)
             ?? self.entries.map(\.provider)
+        self.usageBarsShowUsed = try container.decodeIfPresent(Bool.self, forKey: .usageBarsShowUsed) ?? false
     }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(self.entries, forKey: .entries)
         try container.encode(self.enabledProviders, forKey: .enabledProviders)
+        try container.encode(self.usageBarsShowUsed, forKey: .usageBarsShowUsed)
         try container.encode(self.generatedAt, forKey: .generatedAt)
     }
 }
@@ -101,6 +111,7 @@ public struct WidgetSnapshot: Codable, Sendable {
 public enum WidgetSnapshotStore {
     public static let appGroupID = "group.com.steipete.codexbar"
     private static let filename = "widget-snapshot.json"
+    private static let appGroupEnabledInfoKey = "CodexAppGroupEnabled"
 
     public static func load(bundleID: String? = Bundle.main.bundleIdentifier) -> WidgetSnapshot? {
         guard let url = self.snapshotURL(bundleID: bundleID) else { return nil }
@@ -153,11 +164,23 @@ public enum WidgetSnapshotStore {
     }
 
     private static func groupID(for bundleID: String?) -> String? {
+        if !self.appGroupEnabledByConfiguration() {
+            return nil
+        }
         guard let bundleID, !bundleID.isEmpty else { return self.appGroupID }
         if bundleID.contains(".debug") {
             return "group.com.steipete.codexbar.debug"
         }
         return self.appGroupID
+    }
+
+    private static func appGroupEnabledByConfiguration() -> Bool {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: self.appGroupEnabledInfoKey) else {
+            return true
+        }
+        if let boolValue = value as? Bool { return boolValue }
+        if let numberValue = value as? NSNumber { return numberValue.boolValue }
+        return true
     }
 
     private static var encoder: JSONEncoder {
@@ -179,6 +202,7 @@ public enum WidgetSnapshotStore {
         return WidgetSnapshot(
             entries: entries,
             enabledProviders: enabled.isEmpty ? entries.map(\.provider) : enabled,
+            usageBarsShowUsed: snapshot.usageBarsShowUsed,
             generatedAt: snapshot.generatedAt)
     }
 }
@@ -213,7 +237,11 @@ public enum WidgetSelectionStore {
     }
 
     private static func sharedDefaults(bundleID: String?) -> UserDefaults? {
-        guard let groupID = WidgetSnapshotStore.appGroupID(for: bundleID) else { return nil }
-        return UserDefaults(suiteName: groupID)
+        if let groupID = WidgetSnapshotStore.appGroupID(for: bundleID),
+           let defaults = UserDefaults(suiteName: groupID)
+        {
+            return defaults
+        }
+        return UserDefaults.standard
     }
 }

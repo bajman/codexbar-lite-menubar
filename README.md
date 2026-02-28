@@ -109,6 +109,7 @@ rg -n "SweetCookieKit|OpenAIDashboardScraper|CodexStatusProbe|ClaudeStatusProbe|
 Preflight artifact:
 
 - `docs/lite/preflight.md`
+- `docs/lite/widget-guidelines.md` (Apple WidgetKit/HIG alignment notes)
 
 It captures only:
 

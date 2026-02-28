@@ -1,95 +1,11 @@
-import AppIntents
 import CodexBarCore
 import SwiftUI
 import WidgetKit
 
-enum ProviderChoice: String, AppEnum {
-    case codex
-    case claude
-
-    static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Provider")
-
-    static let caseDisplayRepresentations: [ProviderChoice: DisplayRepresentation] = [
-        .codex: DisplayRepresentation(title: "Codex"),
-        .claude: DisplayRepresentation(title: "Claude"),
-    ]
-
-    var provider: UsageProvider {
-        switch self {
-        case .codex: .codex
-        case .claude: .claude
-        }
-    }
-
-    init?(provider: UsageProvider) {
-        switch provider {
-        case .codex: self = .codex
-        case .claude: self = .claude
-        default: return nil
-        }
-    }
-}
-
-enum CompactMetric: String, AppEnum {
+enum CompactMetric: String {
     case credits
     case todayCost
     case last30DaysCost
-
-    static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Metric")
-
-    static let caseDisplayRepresentations: [CompactMetric: DisplayRepresentation] = [
-        .credits: DisplayRepresentation(title: "Credits left"),
-        .todayCost: DisplayRepresentation(title: "Today cost"),
-        .last30DaysCost: DisplayRepresentation(title: "30d cost"),
-    ]
-}
-
-struct ProviderSelectionIntent: AppIntent, WidgetConfigurationIntent {
-    static let title: LocalizedStringResource = "Provider"
-    static let description = IntentDescription("Select the provider to display in the widget.")
-
-    @Parameter(title: "Provider")
-    var provider: ProviderChoice
-
-    init() {
-        self.provider = .codex
-    }
-}
-
-struct SwitchWidgetProviderIntent: AppIntent {
-    static let title: LocalizedStringResource = "Switch Provider"
-    static let description = IntentDescription("Switch the provider shown in the widget.")
-
-    @Parameter(title: "Provider")
-    var provider: ProviderChoice
-
-    init() {}
-
-    init(provider: ProviderChoice) {
-        self.provider = provider
-    }
-
-    func perform() async throws -> some IntentResult {
-        WidgetSelectionStore.saveSelectedProvider(self.provider.provider)
-        WidgetCenter.shared.reloadAllTimelines()
-        return .result()
-    }
-}
-
-struct CompactMetricSelectionIntent: AppIntent, WidgetConfigurationIntent {
-    static let title: LocalizedStringResource = "Provider + Metric"
-    static let description = IntentDescription("Select the provider and metric to display.")
-
-    @Parameter(title: "Provider")
-    var provider: ProviderChoice
-
-    @Parameter(title: "Metric")
-    var metric: CompactMetric
-
-    init() {
-        self.provider = .codex
-        self.metric = .credits
-    }
 }
 
 struct CodexBarWidgetEntry: TimelineEntry {
@@ -112,31 +28,34 @@ struct CodexBarSwitcherEntry: TimelineEntry {
     let snapshot: WidgetSnapshot
 }
 
-struct CodexBarTimelineProvider: AppIntentTimelineProvider {
+struct CodexBarTimelineProvider: TimelineProvider {
     func placeholder(in context: Context) -> CodexBarWidgetEntry {
-        CodexBarWidgetEntry(
-            date: Date(),
-            provider: .codex,
-            snapshot: WidgetPreviewData.snapshot())
-    }
-
-    func snapshot(for configuration: ProviderSelectionIntent, in context: Context) async -> CodexBarWidgetEntry {
-        let provider = configuration.provider.provider
+        let snapshot = WidgetPreviewData.snapshot()
+        let providers = WidgetProviderSupport.availableProviders(from: snapshot)
         return CodexBarWidgetEntry(
             date: Date(),
-            provider: provider,
-            snapshot: WidgetSnapshotStore.load() ?? WidgetPreviewData.snapshot())
+            provider: providers.first ?? .codex,
+            snapshot: snapshot)
     }
 
-    func timeline(
-        for configuration: ProviderSelectionIntent,
-        in context: Context) async -> Timeline<CodexBarWidgetEntry>
-    {
-        let provider = configuration.provider.provider
-        let snapshot = WidgetSnapshotStore.load() ?? WidgetPreviewData.snapshot()
-        let entry = CodexBarWidgetEntry(date: Date(), provider: provider, snapshot: snapshot)
+    func getSnapshot(in context: Context, completion: @escaping (CodexBarWidgetEntry) -> Void) {
+        completion(self.makeEntry())
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<CodexBarWidgetEntry>) -> Void) {
+        let entry = self.makeEntry()
         let refresh = Date().addingTimeInterval(30 * 60)
-        return Timeline(entries: [entry], policy: .after(refresh))
+        completion(Timeline(entries: [entry], policy: .after(refresh)))
+    }
+
+    private func makeEntry() -> CodexBarWidgetEntry {
+        let snapshot = WidgetSnapshotStore.load() ?? WidgetProviderSupport.emptySnapshot()
+        let providers = WidgetProviderSupport.availableProviders(from: snapshot)
+        let selected = WidgetProviderSupport.resolveSelectedProvider(availableProviders: providers)
+        return CodexBarWidgetEntry(
+            date: Date(),
+            provider: selected,
+            snapshot: snapshot)
     }
 }
 
@@ -162,7 +81,7 @@ struct CodexBarSwitcherTimelineProvider: TimelineProvider {
     }
 
     private func makeEntry() -> CodexBarSwitcherEntry {
-        let snapshot = WidgetSnapshotStore.load() ?? WidgetPreviewData.snapshot()
+        let snapshot = WidgetSnapshotStore.load() ?? WidgetProviderSupport.emptySnapshot()
         let providers = self.availableProviders(from: snapshot)
         let stored = WidgetSelectionStore.loadSelectedProvider()
         let selected = providers.first { $0 == stored } ?? providers.first ?? .codex
@@ -177,44 +96,67 @@ struct CodexBarSwitcherTimelineProvider: TimelineProvider {
     }
 
     private func availableProviders(from snapshot: WidgetSnapshot) -> [UsageProvider] {
-        let enabled = snapshot.enabledProviders
-        let providers = enabled.isEmpty ? snapshot.entries.map(\.provider) : enabled
-        let supported = providers.filter { ProviderChoice(provider: $0) != nil }
-        return supported.isEmpty ? [.codex] : supported
+        WidgetProviderSupport.availableProviders(from: snapshot)
     }
 }
 
-struct CodexBarCompactTimelineProvider: AppIntentTimelineProvider {
+struct CodexBarCompactTimelineProvider: TimelineProvider {
     func placeholder(in context: Context) -> CodexBarCompactEntry {
-        CodexBarCompactEntry(
-            date: Date(),
-            provider: .codex,
-            metric: .credits,
-            snapshot: WidgetPreviewData.snapshot())
-    }
-
-    func snapshot(for configuration: CompactMetricSelectionIntent, in context: Context) async -> CodexBarCompactEntry {
-        let provider = configuration.provider.provider
+        let snapshot = WidgetPreviewData.snapshot()
+        let providers = WidgetProviderSupport.availableProviders(from: snapshot)
         return CodexBarCompactEntry(
             date: Date(),
-            provider: provider,
-            metric: configuration.metric,
-            snapshot: WidgetSnapshotStore.load() ?? WidgetPreviewData.snapshot())
+            provider: providers.first ?? .codex,
+            metric: .credits,
+            snapshot: snapshot)
     }
 
-    func timeline(
-        for configuration: CompactMetricSelectionIntent,
-        in context: Context) async -> Timeline<CodexBarCompactEntry>
-    {
-        let provider = configuration.provider.provider
-        let snapshot = WidgetSnapshotStore.load() ?? WidgetPreviewData.snapshot()
-        let entry = CodexBarCompactEntry(
-            date: Date(),
-            provider: provider,
-            metric: configuration.metric,
-            snapshot: snapshot)
+    func getSnapshot(in context: Context, completion: @escaping (CodexBarCompactEntry) -> Void) {
+        completion(self.makeEntry())
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<CodexBarCompactEntry>) -> Void) {
+        let entry = self.makeEntry()
         let refresh = Date().addingTimeInterval(30 * 60)
-        return Timeline(entries: [entry], policy: .after(refresh))
+        completion(Timeline(entries: [entry], policy: .after(refresh)))
+    }
+
+    private func makeEntry() -> CodexBarCompactEntry {
+        let snapshot = WidgetSnapshotStore.load() ?? WidgetProviderSupport.emptySnapshot()
+        let providers = WidgetProviderSupport.availableProviders(from: snapshot)
+        let selected = WidgetProviderSupport.resolveSelectedProvider(availableProviders: providers)
+        return CodexBarCompactEntry(
+            date: Date(),
+            provider: selected,
+            metric: .credits,
+            snapshot: snapshot)
+    }
+}
+
+enum WidgetProviderSupport {
+    static func emptySnapshot() -> WidgetSnapshot {
+        WidgetSnapshot(entries: [], enabledProviders: [.codex, .claude], generatedAt: Date())
+    }
+
+    static func availableProviders(from snapshot: WidgetSnapshot) -> [UsageProvider] {
+        let order: [UsageProvider] = [.codex, .claude]
+        let supported: Set<UsageProvider> = [.codex, .claude]
+        let fromEnabled = snapshot.enabledProviders.filter { supported.contains($0) }
+        let fromEntries = snapshot.entries.map(\.provider).filter { supported.contains($0) }
+        let combined = Set(fromEnabled).union(fromEntries)
+        if combined.isEmpty {
+            return order
+        }
+        return order.filter { combined.contains($0) }
+    }
+
+    static func resolveSelectedProvider(availableProviders: [UsageProvider]) -> UsageProvider {
+        let stored = WidgetSelectionStore.loadSelectedProvider()
+        let selected = availableProviders.first { $0 == stored } ?? availableProviders.first ?? .codex
+        if selected != stored {
+            WidgetSelectionStore.saveSelectedProvider(selected)
+        }
+        return selected
     }
 }
 

@@ -86,7 +86,13 @@ let package = Package(
                 dependencies: ["CodexBarCore"],
                 path: "Sources/CodexBarWidget",
                 swiftSettings: [
+                    // Build as an app-extension-safe binary so WidgetKit boots via NSExtensionMain.
+                    .unsafeFlags(["-application-extension"]),
                     .enableUpcomingFeature("StrictConcurrency"),
+                ],
+                linkerSettings: [
+                    // Use the extension entrypoint instead of a standalone app main.
+                    .unsafeFlags(["-Xlinker", "-e", "-Xlinker", "_NSExtensionMain"]),
                 ]),
         ])
 

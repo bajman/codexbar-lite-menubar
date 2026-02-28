@@ -81,19 +81,6 @@ let package = Package(
                     // Opt into Swift 6 strict concurrency (approachable migration path).
                     .enableUpcomingFeature("StrictConcurrency"),
                 ]),
-            .executableTarget(
-                name: "CodexBarWidget",
-                dependencies: ["CodexBarCore"],
-                path: "Sources/CodexBarWidget",
-                swiftSettings: [
-                    // Build as an app-extension-safe binary so WidgetKit boots via NSExtensionMain.
-                    .unsafeFlags(["-application-extension"]),
-                    .enableUpcomingFeature("StrictConcurrency"),
-                ],
-                linkerSettings: [
-                    // Use the extension entrypoint instead of a standalone app main.
-                    .unsafeFlags(["-Xlinker", "-e", "-Xlinker", "_NSExtensionMain"]),
-                ]),
         ])
 
         targets.append(.testTarget(

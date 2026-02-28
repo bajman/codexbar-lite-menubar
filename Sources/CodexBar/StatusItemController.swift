@@ -12,7 +12,7 @@ protocol StatusItemControlling: AnyObject {
 }
 
 @MainActor
-final class StatusItemController: NSObject, NSMenuDelegate, StatusItemControlling {
+final class StatusItemController: NSObject, StatusItemControlling, MenuPanelActions {
     // Disable SwiftUI menu cards + menu refresh work in tests to avoid swiftpm-testing-helper crashes.
     static var menuCardRenderingEnabled = !SettingsStore.isRunningTests
     static var menuRefreshEnabled = !SettingsStore.isRunningTests
@@ -37,14 +37,7 @@ final class StatusItemController: NSObject, NSMenuDelegate, StatusItemControllin
     var statusItem: NSStatusItem
     var statusItems: [UsageProvider: NSStatusItem] = [:]
     var lastMenuProvider: UsageProvider?
-    var menuProviders: [ObjectIdentifier: UsageProvider] = [:]
-    var menuContentVersion: Int = 0
-    var menuVersions: [ObjectIdentifier: Int] = [:]
-    var mergedMenu: NSMenu?
-    var providerMenus: [UsageProvider: NSMenu] = [:]
-    var fallbackMenu: NSMenu?
-    var openMenus: [ObjectIdentifier: NSMenu] = [:]
-    var menuRefreshTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
+    var panelController: MenuPanelController?
     var blinkTask: Task<Void, Never>?
     var loginTask: Task<Void, Never>? {
         didSet { self.refreshMenusForLoginStateChange() }
@@ -82,16 +75,6 @@ final class StatusItemController: NSObject, NSMenuDelegate, StatusItemControllin
     private var lastMergeIcons: Bool
     private var lastSwitcherShowsIcons: Bool
     private var lastObservedUsageBarsShowUsed: Bool
-    /// Tracks which `usageBarsShowUsed` mode the provider switcher was built with.
-    /// Used to decide whether we can "smart update" menu content without rebuilding the switcher.
-    var lastSwitcherUsageBarsShowUsed: Bool
-    /// Tracks whether the merged-menu switcher was built with the Overview tab visible.
-    /// Used to force switcher rebuilds when Overview availability toggles.
-    var lastSwitcherIncludesOverview: Bool = false
-    /// Tracks which providers the merged menu's switcher was built with, to detect when it needs full rebuild.
-    var lastSwitcherProviders: [UsageProvider] = []
-    /// Tracks which switcher tab state was used for the current merged-menu switcher instance.
-    var lastMergedSwitcherSelection: ProviderSwitcherSelection?
     let loginLogger = CodexBarLog.logger(LogCategories.login)
     var selectedMenuProvider: UsageProvider? {
         get { self.settings.selectedMenuProvider }
@@ -169,7 +152,6 @@ final class StatusItemController: NSObject, NSMenuDelegate, StatusItemControllin
         self.lastMergeIcons = settings.mergeIcons
         self.lastSwitcherShowsIcons = settings.switcherShowsIcons
         self.lastObservedUsageBarsShowUsed = settings.usageBarsShowUsed
-        self.lastSwitcherUsageBarsShowUsed = settings.usageBarsShowUsed
         self.statusBar = statusBar
         let item = statusBar.statusItem(withLength: NSStatusItem.variableLength)
         // Ensure the icon is rendered at 1:1 without resampling (crisper edges for template images).
@@ -274,62 +256,32 @@ final class StatusItemController: NSObject, NSMenuDelegate, StatusItemControllin
     }
 
     private func invalidateMenus() {
-        self.menuContentVersion &+= 1
-        // Don't refresh menus while they're open - wait until they close and reopen
-        // This prevents expensive rebuilds while user is navigating the menu
-        guard self.openMenus.isEmpty else { return }
-        self.refreshOpenMenusIfNeeded()
-        Task { @MainActor in
-            // AppKit can ignore menu mutations while tracking; retry on the next run loop.
-            await Task.yield()
-            guard self.openMenus.isEmpty else { return }
-            self.refreshOpenMenusIfNeeded()
-        }
-    }
-
-    private func shouldRefreshOpenMenusForProviderSwitcher() -> Bool {
-        var shouldRefresh = false
-        let revision = self.settings.configRevision
-        if revision != self.lastConfigRevision {
-            self.lastConfigRevision = revision
-            shouldRefresh = true
-        }
-        let order = self.settings.providerOrder
-        if order != self.lastProviderOrder {
-            self.lastProviderOrder = order
-            shouldRefresh = true
-        }
-        let mergeIcons = self.settings.mergeIcons
-        if mergeIcons != self.lastMergeIcons {
-            self.lastMergeIcons = mergeIcons
-            shouldRefresh = true
-        }
-        let showsIcons = self.settings.switcherShowsIcons
-        if showsIcons != self.lastSwitcherShowsIcons {
-            self.lastSwitcherShowsIcons = showsIcons
-            shouldRefresh = true
-        }
-        let usageBarsShowUsed = self.settings.usageBarsShowUsed
-        if usageBarsShowUsed != self.lastObservedUsageBarsShowUsed {
-            self.lastObservedUsageBarsShowUsed = usageBarsShowUsed
-            shouldRefresh = true
-        }
-        return shouldRefresh
+        // SwiftUI observes store changes automatically — no manual menu rebuild needed
     }
 
     private func handleSettingsChange(reason: String) {
         let configChanged = self.settings.configRevision != self.lastConfigRevision
         let orderChanged = self.settings.providerOrder != self.lastProviderOrder
-        let shouldRefreshOpenMenus = self.shouldRefreshOpenMenusForProviderSwitcher()
-        self.invalidateMenus()
+        if self.settings.configRevision != self.lastConfigRevision {
+            self.lastConfigRevision = self.settings.configRevision
+        }
+        if self.settings.providerOrder != self.lastProviderOrder {
+            self.lastProviderOrder = self.settings.providerOrder
+        }
+        if self.settings.mergeIcons != self.lastMergeIcons {
+            self.lastMergeIcons = self.settings.mergeIcons
+        }
+        if self.settings.switcherShowsIcons != self.lastSwitcherShowsIcons {
+            self.lastSwitcherShowsIcons = self.settings.switcherShowsIcons
+        }
+        if self.settings.usageBarsShowUsed != self.lastObservedUsageBarsShowUsed {
+            self.lastObservedUsageBarsShowUsed = self.settings.usageBarsShowUsed
+        }
         if orderChanged || configChanged {
             self.rebuildProviderStatusItems()
         }
         self.updateVisibility()
         self.updateIcons()
-        if shouldRefreshOpenMenus {
-            self.refreshOpenMenusIfNeeded()
-        }
     }
 
     private func updateIcons() {
@@ -396,7 +348,6 @@ final class StatusItemController: NSObject, NSMenuDelegate, StatusItemControllin
     }
 
     private func refreshMenusForLoginStateChange() {
-        self.invalidateMenus()
         if self.shouldMergeIcons {
             self.attachMenus()
         } else {
@@ -405,42 +356,27 @@ final class StatusItemController: NSObject, NSMenuDelegate, StatusItemControllin
     }
 
     private func attachMenus() {
-        if self.mergedMenu == nil {
-            self.mergedMenu = self.makeMenu()
-        }
-        if self.statusItem.menu !== self.mergedMenu {
-            self.statusItem.menu = self.mergedMenu
+        // Panel controller is created lazily on first click to avoid
+        // evaluating SwiftUI views (with .glassEffect) before the window
+        // system is fully ready — which can crash on cold first launch.
+        self.statusItem.menu = nil
+        if self.statusItem.button?.target !== self {
+            self.statusItem.button?.target = self
+            self.statusItem.button?.action = #selector(self.statusItemClicked(_:))
+            self.statusItem.button?.sendAction(on: [.leftMouseUp])
         }
     }
 
     private func attachMenus(fallback: UsageProvider? = nil) {
         for provider in UsageProvider.allCases {
-            // Only access/create the status item if it's actually needed
             let shouldHaveItem = self.isEnabled(provider) || fallback == provider
-
             if shouldHaveItem {
                 let item = self.lazyStatusItem(for: provider)
-
-                if self.isEnabled(provider) {
-                    if self.providerMenus[provider] == nil {
-                        self.providerMenus[provider] = self.makeMenu(for: provider)
-                    }
-                    let menu = self.providerMenus[provider]
-                    if item.menu !== menu {
-                        item.menu = menu
-                    }
-                } else if fallback == provider {
-                    if self.fallbackMenu == nil {
-                        self.fallbackMenu = self.makeMenu(for: nil)
-                    }
-                    if item.menu !== self.fallbackMenu {
-                        item.menu = self.fallbackMenu
-                    }
-                }
-            } else if let item = self.statusItems[provider] {
-                // Item exists but is no longer needed - clear its menu
-                if item.menu != nil {
-                    item.menu = nil
+                item.menu = nil
+                if item.button?.target !== self {
+                    item.button?.target = self
+                    item.button?.action = #selector(self.statusItemClicked(_:))
+                    item.button?.sendAction(on: [.leftMouseUp])
                 }
             }
         }
@@ -477,6 +413,97 @@ final class StatusItemController: NSObject, NSMenuDelegate, StatusItemControllin
         }
         let prefix = ProviderDescriptorRegistry.descriptor(for: provider).metadata.displayName
         return "\(prefix): \(base)"
+    }
+
+    @objc private func statusItemClicked(_ sender: Any?) {
+        // Determine which provider was clicked (for non-merged mode)
+        if let button = sender as? NSStatusBarButton {
+            for (provider, item) in self.statusItems where item.button === button {
+                self.lastMenuProvider = provider
+            }
+        }
+        guard let button = (sender as? NSStatusBarButton) ?? self.statusItem.button else { return }
+        self.ensurePanelController()
+        self.panelController?.toggle(relativeTo: button)
+    }
+
+    private func ensurePanelController() {
+        guard self.panelController == nil else { return }
+        guard #available(macOS 26, *) else { return }
+        self.panelController = MenuPanelController {
+            self.makePanelContentView()
+        }
+    }
+
+    @available(macOS 26, *)
+    private func makePanelContentView() -> some View {
+        MenuPanelContentView(
+            store: self.store,
+            settings: self.settings,
+            account: self.account,
+            updater: self.updater,
+            cardWidth: 310,
+            shouldMergeIcons: self.shouldMergeIcons,
+            actions: self,
+            cardModelProvider: { [weak self] provider in
+                self?.menuCardModel(for: provider)
+            },
+            switcherIconProvider: { [weak self] provider in
+                self?.switcherIcon(for: provider) ?? NSImage()
+            },
+            switcherWeeklyRemainingProvider: { [weak self] provider in
+                self?.switcherWeeklyRemaining(for: provider)
+            },
+            includesOverviewProvider: { [weak self] providers in
+                self?.includesOverviewTab(enabledProviders: providers) ?? false
+            },
+            resolvedSwitcherSelectionProvider: { [weak self] providers, includesOverview in
+                self?.resolvedSwitcherSelection(
+                    enabledProviders: providers,
+                    includesOverview: includesOverview) ?? .provider(providers.first ?? .codex)
+            },
+            resolvedMenuProviderFn: { [weak self] in
+                self?.resolvedMenuProvider()
+            },
+            tokenAccountDisplayProvider: { [weak self] provider in
+                self?.tokenAccountMenuDisplayModel(for: provider)
+            },
+            openAIWebContextProvider: { [weak self] provider, showAll in
+                self?.openAIWebContextModel(
+                    currentProvider: provider,
+                    showAllTokenAccounts: showAll) ?? OpenAIWebContextModel(
+                        hasUsageBreakdown: false, hasCreditsHistory: false, hasCostHistory: false)
+            })
+    }
+
+    func dismissPanel() {
+        self.panelController?.dismiss()
+    }
+
+    // MARK: - MenuPanelActions conformance
+
+    func runSwitchAccount(provider: UsageProvider) {
+        let item = NSMenuItem()
+        item.representedObject = provider.rawValue
+        self.runSwitchAccount(item)
+    }
+
+    func openTerminal(command: String) {
+        let item = NSMenuItem()
+        item.representedObject = command
+        self.openTerminalCommand(item)
+    }
+
+    func openLoginToProvider(url: String) {
+        let item = NSMenuItem()
+        item.representedObject = url
+        self.openLoginToProvider(item)
+    }
+
+    func copyError(_ message: String) {
+        let item = NSMenuItem()
+        item.representedObject = message
+        self.copyError(item)
     }
 
     deinit {

@@ -438,8 +438,6 @@ final class UsageStore {
                 await self.refreshProvider(.codex)
                 await self.refreshCreditsIfNeeded()
             }
-
-            self.persistWidgetSnapshot(reason: "refresh")
         }
     }
 
@@ -1250,7 +1248,7 @@ extension UsageStore {
             self.tokenSnapshots[provider] = snapshot
             self.tokenErrors[provider] = nil
             self.tokenFailureGates[provider]?.recordSuccess()
-            self.persistWidgetSnapshot(reason: "token-usage")
+
         } catch {
             if error is CancellationError { return }
             let duration = Date().timeIntervalSince(startedAt)

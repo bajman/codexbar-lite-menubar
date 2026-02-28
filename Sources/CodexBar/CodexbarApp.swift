@@ -4,8 +4,6 @@ import KeyboardShortcuts
 import Observation
 import QuartzCore
 import SwiftUI
-import WidgetKit
-
 @main
 struct CodexBarApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -63,9 +61,6 @@ struct CodexBarApp: App {
         // shows the native toolbar tabs even though the UI is AppKit-based.
         WindowGroup("CodexBarLifecycleKeepalive") {
             HiddenWindowView()
-                .onOpenURL { url in
-                    Self.handleWidgetProviderSelection(url: url)
-                }
         }
         .defaultSize(width: 20, height: 20)
         .windowStyle(.hiddenTitleBar)
@@ -87,26 +82,6 @@ struct CodexBarApp: App {
         _ = NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
     }
 
-    private static func handleWidgetProviderSelection(url: URL) {
-        guard url.scheme?.lowercased() == "codexbar",
-              url.host?.lowercased() == "widget"
-        else { return }
-
-        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        guard components?.path == "/select" else { return }
-
-        let providerRaw = components?.queryItems?
-            .first(where: { $0.name == "provider" })?
-            .value?
-            .lowercased()
-        guard let providerRaw,
-              let provider = UsageProvider(rawValue: providerRaw),
-              provider == .codex || provider == .claude
-        else { return }
-
-        WidgetSelectionStore.saveSelectedProvider(provider)
-        WidgetCenter.shared.reloadAllTimelines()
-    }
 }
 
 // MARK: - Updater abstraction

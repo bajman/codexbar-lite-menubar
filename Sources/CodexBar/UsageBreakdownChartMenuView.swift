@@ -146,9 +146,7 @@ struct UsageBreakdownChartMenuView: View {
     }
 
     private static var selectionBandColor: Color {
-        LiquidGlassAvailability.shouldApplyGlass
-            ? Color.white.opacity(0.12)
-            : Color(nsColor: .labelColor).opacity(0.1)
+        Color.white.opacity(0.12)
     }
 
     private static func makeModel(from breakdown: [OpenAIDashboardDailyBreakdown]) -> Model {

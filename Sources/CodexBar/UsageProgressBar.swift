@@ -39,10 +39,6 @@ struct UsageProgressBar: View {
         min(100, max(0, self.percent))
     }
 
-    private var shouldGlass: Bool {
-        LiquidGlassAvailability.shouldApplyGlass && !self.isHighlighted
-    }
-
     var body: some View {
         GeometryReader { proxy in
             let scale = max(self.displayScale, 1)
@@ -53,12 +49,9 @@ struct UsageProgressBar: View {
             let tipOffset = paceWidth - tipWidth + (Self.paceStripeSpan(for: scale) / 2) + stripeInset
             let showTip = self.pacePercent != nil && tipWidth > 0.5
             let needsPunchCompositing = showTip
-            let trackColor: Color = self.shouldGlass
-                ? Color.white.opacity(0.12)
-                : MenuHighlightStyle.progressTrack(self.isHighlighted)
             let bar = ZStack(alignment: .leading) {
                 Capsule()
-                    .fill(trackColor)
+                    .fill(Color.white.opacity(0.12))
                 self.actualBar(width: fillWidth)
                 if showTip {
                     self.paceTip(width: tipWidth)
@@ -77,47 +70,38 @@ struct UsageProgressBar: View {
                 bar
             }
         }
-        .frame(height: self.shouldGlass ? 8 : 6)
+        .frame(height: 8)
         .accessibilityLabel(self.accessibilityLabel)
         .accessibilityValue("\(Int(self.clamped)) percent")
     }
 
-    @ViewBuilder
     private func actualBar(width: CGFloat) -> some View {
-        if self.shouldGlass {
-            Capsule()
-                .fill(
-                    LinearGradient(
-                        colors: [self.tint.opacity(0.65), self.tint],
-                        startPoint: .top,
-                        endPoint: .bottom))
-                .frame(width: width)
-                .overlay {
-                    Capsule()
-                        .fill(
-                            LinearGradient(
-                                stops: [
-                                    .init(color: Color.white.opacity(0.35), location: 0.0),
-                                    .init(color: Color.white.opacity(0.08), location: 0.5),
-                                    .init(color: .clear, location: 1.0),
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom))
-                        .frame(height: 4)
-                        .frame(maxHeight: .infinity, alignment: .top)
-                        .clipShape(Capsule())
-                        .allowsHitTesting(false)
-                }
-                .shadow(color: self.tint.opacity(0.35), radius: 3, y: 1)
-                .contentShape(Rectangle())
-                .allowsHitTesting(false)
-        } else {
-            Capsule()
-                .fill(MenuHighlightStyle.progressTint(self.isHighlighted, fallback: self.tint))
-                .frame(width: width)
-                .contentShape(Rectangle())
-                .allowsHitTesting(false)
-        }
+        Capsule()
+            .fill(
+                LinearGradient(
+                    colors: [self.tint.opacity(0.65), self.tint],
+                    startPoint: .top,
+                    endPoint: .bottom))
+            .frame(width: width)
+            .overlay {
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            stops: [
+                                .init(color: Color.white.opacity(0.35), location: 0.0),
+                                .init(color: Color.white.opacity(0.08), location: 0.5),
+                                .init(color: .clear, location: 1.0),
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom))
+                    .frame(height: 4)
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .clipShape(Capsule())
+                    .allowsHitTesting(false)
+            }
+            .shadow(color: self.tint.opacity(0.35), radius: 3, y: 1)
+            .contentShape(Rectangle())
+            .allowsHitTesting(false)
     }
 
     private func paceTip(width: CGFloat) -> some View {

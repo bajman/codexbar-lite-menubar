@@ -137,15 +137,15 @@ extension StatusItemController {
     }
 
     func openMenuFromShortcut() {
+        let button: NSStatusBarButton?
         if self.shouldMergeIcons {
-            self.statusItem.button?.performClick(nil)
-            return
+            button = self.statusItem.button
+        } else {
+            let provider = self.resolvedShortcutProvider()
+            button = self.lazyStatusItem(for: provider).button
         }
-
-        let provider = self.resolvedShortcutProvider()
-        // Use the lazy accessor to ensure the item exists
-        let item = self.lazyStatusItem(for: provider)
-        item.button?.performClick(nil)
+        guard let button else { return }
+        self.panelController?.toggle(relativeTo: button)
     }
 
     private func openSettings(tab: PreferencesTab) {

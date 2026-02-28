@@ -9,15 +9,9 @@ public enum LiquidGlassLayer: String, Codable, Sendable {
 }
 
 public enum LiquidGlassAvailability: Sendable {
-    public static var isSystemGlassAvailable: Bool {
-        if #available(macOS 26, *) { return true }
-        return false
-    }
-
     public static func isGlassEnabled(
-        defaults: UserDefaults? = UserDefaults(suiteName: WidgetSnapshotStore.appGroupID)
+        defaults: UserDefaults? = .standard
     ) -> Bool {
-        guard isSystemGlassAvailable else { return false }
         guard let defaults else { return true }
         if defaults.object(forKey: "liquidGlassEnabled") == nil { return true }
         return defaults.bool(forKey: "liquidGlassEnabled")

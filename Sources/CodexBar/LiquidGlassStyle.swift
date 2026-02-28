@@ -14,7 +14,9 @@ struct MenuGlassBackground: ViewModifier {
                         .glassEffect(.regular.interactive(),
                                      in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
                 }
-            } else { content }
+            } else {
+                content
+            }
         } else { content }
     }
 }

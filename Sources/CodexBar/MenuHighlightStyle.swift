@@ -1,4 +1,3 @@
-import CodexBarCore
 import SwiftUI
 
 extension EnvironmentValues {
@@ -20,10 +19,7 @@ enum MenuHighlightStyle {
 
     static func glassSecondary(_ highlighted: Bool) -> Color {
         if highlighted { return selectionText }
-        if LiquidGlassAvailability.shouldApplyGlass {
-            return Color(nsColor: .secondaryLabelColor).opacity(0.9)
-        }
-        return normalSecondaryText
+        return Color(nsColor: .secondaryLabelColor).opacity(0.9)
     }
 
     static func error(_ highlighted: Bool) -> Color {
@@ -42,7 +38,7 @@ enum MenuHighlightStyle {
         highlighted ? Color(nsColor: .selectedContentBackgroundColor) : .clear
     }
 
-    static var glassFontDesign: Font.Design? {
-        LiquidGlassAvailability.shouldApplyGlass ? .rounded : nil
+    static var glassFontDesign: Font.Design {
+        .rounded
     }
 }

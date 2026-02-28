@@ -3,6 +3,13 @@ import SwiftUI
 import WidgetKit
 
 
+private enum WidgetSurfaceStyle {
+    case usage
+    case history
+    case compact
+    case switcher
+}
+
 private enum WidgetLiquidGlass {
     static let radius: CGFloat = 19
     static let edgeWidth: CGFloat = 1.0
@@ -19,6 +26,32 @@ private enum WidgetLiquidGlass {
     static func highlightAlpha(for renderingMode: WidgetRenderingMode) -> Double {
         renderingMode == .accented ? 0.30 : 0.16
     }
+
+    static func baseOpacity(for style: WidgetSurfaceStyle, renderingMode: WidgetRenderingMode) -> Double {
+        switch style {
+        case .compact:
+            return renderingMode == .accented ? 0.92 : 0.76
+        case .history:
+            return renderingMode == .accented ? 0.90 : 0.72
+        case .switcher:
+            return renderingMode == .accented ? 0.88 : 0.70
+        case .usage:
+            return renderingMode == .accented ? 0.90 : 0.74
+        }
+    }
+
+    static func accentWashOpacity(for style: WidgetSurfaceStyle, renderingMode: WidgetRenderingMode) -> Double {
+        switch style {
+        case .compact:
+            return renderingMode == .accented ? 0.42 : 0.30
+        case .history:
+            return renderingMode == .accented ? 0.38 : 0.26
+        case .switcher:
+            return renderingMode == .accented ? 0.44 : 0.28
+        case .usage:
+            return renderingMode == .accented ? 0.40 : 0.28
+        }
+    }
 }
 
 private struct WidgetSurface<Content: View>: View {
@@ -28,6 +61,7 @@ private struct WidgetSurface<Content: View>: View {
     @Environment(\.colorScheme) private var colorScheme
 
     let provider: UsageProvider?
+    let style: WidgetSurfaceStyle
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -35,7 +69,8 @@ private struct WidgetSurface<Content: View>: View {
             if self.showsWidgetContainerBackground {
                 LiquidGlassFill(
                     provider: self.provider,
-                    renderingMode: self.renderingMode)
+                    renderingMode: self.renderingMode,
+                    style: self.style)
             }
             self.content
         }
@@ -61,7 +96,7 @@ private struct WidgetSurface<Content: View>: View {
                 .trim(from: 0.0, to: 0.96)
                 .stroke(
                     self.glowColor.opacity(WidgetLiquidGlass.highlightAlpha(for: self.renderingMode)),
-                    lineWidth: 0.4)
+                    lineWidth: self.style == .compact ? 0.55 : 0.4)
                 .allowsHitTesting(false)
         }
         .overlay(alignment: .bottom) {
@@ -69,7 +104,7 @@ private struct WidgetSurface<Content: View>: View {
                 .trim(from: 0.05, to: 0.95)
                 .stroke(
                     Color.white.opacity(self.renderingMode == .accented ? 0.14 : 0.08),
-                    lineWidth: 0.35)
+                    lineWidth: self.style == .compact ? 0.45 : 0.35)
                 .blur(radius: 0.3)
                 .offset(y: 0.25)
                 .allowsHitTesting(false)
@@ -94,44 +129,45 @@ private struct WidgetSurface<Content: View>: View {
 private struct LiquidGlassFill: View {
     let provider: UsageProvider?
     let renderingMode: WidgetRenderingMode
+    let style: WidgetSurfaceStyle
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: WidgetLiquidGlass.radius, style: .continuous)
-                .fill(.ultraThinMaterial.opacity(self.renderingMode == .accented ? 0.88 : 0.68))
+                .fill(.ultraThinMaterial.opacity(WidgetLiquidGlass.baseOpacity(for: self.style, renderingMode: self.renderingMode)))
             RoundedRectangle(cornerRadius: WidgetLiquidGlass.radius, style: .continuous)
                 .fill(
                     LinearGradient(
                         colors: [
-                            Color.white.opacity(0.18),
+                            Color.white.opacity(self.style == .compact ? 0.26 : 0.18),
                             Color.clear,
-                            Color.white.opacity(0.08),
+                            Color.white.opacity(self.style == .history ? 0.12 : 0.08),
                         ],
                         startPoint: .top,
                         endPoint: .bottom))
                 .blendMode(.screen)
-                .opacity(self.renderingMode == .accented ? 0.95 : 0.82)
+                .opacity(self.renderingMode == .accented ? 0.98 : 0.86)
             RoundedRectangle(cornerRadius: WidgetLiquidGlass.radius, style: .continuous)
                 .fill(
                     AngularGradient(
                         gradient: Gradient(stops: [
-                            .init(color: Color.white.opacity(self.colorScheme == .dark ? 0.24 : 0.18), location: 0.0),
+                            .init(color: Color.white.opacity(self.colorScheme == .dark ? 0.28 : 0.20), location: 0.0),
                             .init(color: .clear, location: 0.30),
                             .init(color: Color.white.opacity(0.06), location: 0.58),
                             .init(color: .clear, location: 0.90),
                         ]),
                         center: .topLeading))
-                .opacity(0.34)
+                .opacity(self.style == .switcher ? 0.42 : 0.34)
             if let provider {
                 let accent = WidgetColors.color(for: provider)
                 RoundedRectangle(cornerRadius: WidgetLiquidGlass.radius, style: .continuous)
                     .fill(
                         LinearGradient(
                             colors: [
-                                accent.opacity(self.renderingMode == .accented ? 0.40 : 0.26),
+                                accent.opacity(WidgetLiquidGlass.accentWashOpacity(for: self.style, renderingMode: self.renderingMode)),
                                 .clear,
-                                accent.opacity(self.renderingMode == .accented ? 0.28 : 0.18),
+                                accent.opacity(self.renderingMode == .accented ? 0.30 : 0.20),
                                 .clear,
                             ],
                             startPoint: .topLeading,
@@ -142,6 +178,7 @@ private struct LiquidGlassFill: View {
                             .stroke(accent.opacity(WidgetLiquidGlass.borderAlpha(for: self.renderingMode)), lineWidth: WidgetLiquidGlass.edgeWidth)
                     )
             }
+            self.styleOverlay
             RoundedRectangle(cornerRadius: WidgetLiquidGlass.radius, style: .continuous)
                 .fill(Color.white.opacity(self.colorScheme == .dark ? 0.18 : 0.10))
                 .blendMode(.softLight)
@@ -161,6 +198,66 @@ private struct LiquidGlassFill: View {
                     .fill(.clear)
                     .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: WidgetLiquidGlass.radius, style: .continuous))
             }
+        }
+    }
+
+    @ViewBuilder
+    private var styleOverlay: some View {
+        switch self.style {
+        case .usage:
+            RoundedRectangle(cornerRadius: WidgetLiquidGlass.radius, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.20),
+                            .clear,
+                            Color.white.opacity(0.10),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing))
+                .blendMode(.screen)
+                .opacity(self.renderingMode == .accented ? 0.7 : 0.45)
+        case .history:
+            RoundedRectangle(cornerRadius: WidgetLiquidGlass.radius, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.08),
+                            Color.white.opacity(0.16),
+                            Color.clear,
+                        ],
+                        startPoint: .bottom,
+                        endPoint: .top))
+                .opacity(self.renderingMode == .accented ? 0.75 : 0.55)
+            RoundedRectangle(cornerRadius: WidgetLiquidGlass.radius, style: .continuous)
+                .stroke(
+                    Color.white.opacity(self.colorScheme == .dark ? 0.22 : 0.12),
+                    style: StrokeStyle(lineWidth: 0.45, dash: [6, 8]))
+                .opacity(0.25)
+        case .compact:
+            RoundedRectangle(cornerRadius: WidgetLiquidGlass.radius, style: .continuous)
+                .fill(
+                    RadialGradient(
+                        colors: [
+                            Color.white.opacity(0.35),
+                            .clear,
+                        ],
+                        center: .topLeading,
+                        startRadius: 0,
+                        endRadius: 160))
+                .opacity(self.renderingMode == .accented ? 0.9 : 0.6)
+        case .switcher:
+            RoundedRectangle(cornerRadius: WidgetLiquidGlass.radius, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.26),
+                            Color.white.opacity(0.04),
+                            .clear,
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom))
+                .opacity(self.renderingMode == .accented ? 0.85 : 0.6)
         }
     }
 }
@@ -252,7 +349,7 @@ struct CodexBarUsageWidgetView: View {
 
     var body: some View {
         let providerEntry = self.entry.snapshot.entries.first { $0.provider == self.entry.provider }
-        WidgetSurface(provider: providerEntry?.provider) {
+        WidgetSurface(provider: providerEntry?.provider, style: .usage) {
             if let providerEntry {
                 self.content(providerEntry: providerEntry)
             } else {
@@ -292,7 +389,7 @@ struct CodexBarHistoryWidgetView: View {
 
     var body: some View {
         let providerEntry = self.entry.snapshot.entries.first { $0.provider == self.entry.provider }
-        WidgetSurface(provider: providerEntry?.provider) {
+        WidgetSurface(provider: providerEntry?.provider, style: .history) {
             if let providerEntry {
                 HistoryView(
                     entry: providerEntry,
@@ -322,7 +419,7 @@ struct CodexBarCompactWidgetView: View {
 
     var body: some View {
         let providerEntry = self.entry.snapshot.entries.first { $0.provider == self.entry.provider }
-        WidgetSurface(provider: providerEntry?.provider) {
+        WidgetSurface(provider: providerEntry?.provider, style: .compact) {
             if let providerEntry {
                 CompactMetricView(entry: providerEntry, metric: self.entry.metric)
             } else {
@@ -350,7 +447,7 @@ struct CodexBarSwitcherWidgetView: View {
 
     var body: some View {
         let providerEntry = self.entry.snapshot.entries.first { $0.provider == self.entry.provider }
-        WidgetSurface(provider: providerEntry?.provider) {
+        WidgetSurface(provider: providerEntry?.provider, style: .switcher) {
             VStack(alignment: .leading, spacing: 10) {
                 ProviderSwitcherRow(
                     providers: self.entry.availableProviders,

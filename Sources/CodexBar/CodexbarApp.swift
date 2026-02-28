@@ -163,7 +163,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Use the classic (non-Liquid Glass) app icon on macOS versions before 26.
     private func configureAppIconForMacOSVersion() {
-        if #unavailable(macOS 26) {
+        let osVersion = ProcessInfo.processInfo.operatingSystemVersion
+        if osVersion.majorVersion < 26 {
             self.applyClassicAppIcon()
         }
     }

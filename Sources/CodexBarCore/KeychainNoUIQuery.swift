@@ -9,11 +9,8 @@ enum KeychainNoUIQuery {
         let context = LAContext()
         context.interactionNotAllowed = true
         query[kSecUseAuthenticationContext as String] = context
-
-        // NOTE: While Apple recommends using LAContext.interactionNotAllowed, that alone is not sufficient to
-        // prevent the legacy keychain "Allow/Deny" prompt on some configurations. We also set the UI policy to fail
-        // so SecItemCopyMatching returns errSecInteractionNotAllowed instead of showing UI.
-        query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
+        // NOTE: The non-UI policy is controlled via LAContext.interactionNotAllowed. Use the authentication
+        // context rather than the deprecated kSecUseAuthenticationUI flags.
     }
 }
 #endif

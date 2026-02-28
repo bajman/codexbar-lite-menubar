@@ -1020,7 +1020,56 @@ enum IconRenderer {
         }
 
         image.isTemplate = true
-        return image
+        return self.applyRefractiveGlowIfNeeded(to: image)
+    }
+
+    private static func applyRefractiveGlowIfNeeded(to image: NSImage) -> NSImage {
+        guard #available(macOS 26.4, *), LiquidGlassAvailability.shouldApplyGlass else {
+            return image
+        }
+
+        let output = NSImage(size: image.size)
+        if let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: Int(Self.outputSize.width * Self.outputScale),
+            pixelsHigh: Int(Self.outputSize.height * Self.outputScale),
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0)
+        {
+            rep.size = Self.outputSize
+            output.addRepresentation(rep)
+
+            NSGraphicsContext.saveGraphicsState()
+            if let ctx = NSGraphicsContext(bitmapImageRep: rep) {
+                NSGraphicsContext.current = ctx
+                let source = NSRect(origin: .zero, size: Self.outputSize)
+                let glow = NSShadow()
+                glow.shadowOffset = .zero
+                glow.shadowBlurRadius = 2
+                glow.shadowColor = NSColor.white.withAlphaComponent(0.15)
+                glow.set()
+                image.draw(in: source, from: source, operation: .sourceOver, fraction: 1)
+            }
+            NSGraphicsContext.restoreGraphicsState()
+        } else {
+            output.lockFocus()
+            let source = NSRect(origin: .zero, size: Self.outputSize)
+            let glow = NSShadow()
+            glow.shadowOffset = .zero
+            glow.shadowBlurRadius = 2
+            glow.shadowColor = NSColor.white.withAlphaComponent(0.15)
+            glow.set()
+            image.draw(in: source, from: source, operation: .sourceOver, fraction: 1)
+            output.unlockFocus()
+        }
+
+        output.isTemplate = true
+        return output
     }
 }
 

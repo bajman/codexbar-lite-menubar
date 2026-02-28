@@ -1,11 +1,22 @@
 import Foundation
 
+#if canImport(SwiftUI)
+import SwiftUI
+#endif
+
 #if canImport(AppKit)
 import AppKit
 #endif
 
 public enum LiquidGlassLayer: String, Codable, Sendable {
-    case shell, card, pill, none
+    /// Thick glass surface, used for larger containers.
+    case shell
+    /// Thin glass surface, used for cards and panels.
+    case card
+    /// Ultra-thin glass surface, used for pill styles.
+    case pill
+    /// No liquid-glass style.
+    case none
 }
 
 public enum LiquidGlassAvailability: Sendable {
@@ -19,12 +30,26 @@ public enum LiquidGlassAvailability: Sendable {
 
     #if canImport(AppKit)
     public static var shouldApplyGlass: Bool {
-        isGlassEnabled()
+        guard #available(macOS 26.4, *) else { return false }
+        return isGlassEnabled()
             && !NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
     }
     #else
     public static var shouldApplyGlass: Bool {
-        isGlassEnabled()
+        false
     }
     #endif
 }
+
+#if canImport(SwiftUI)
+public struct LiquidGlassActiveKey: EnvironmentKey {
+    public static let defaultValue = false
+}
+
+public extension EnvironmentValues {
+    var liquidGlassActive: Bool {
+        get { self[LiquidGlassActiveKey.self] }
+        set { self[LiquidGlassActiveKey.self] = newValue }
+    }
+}
+#endif

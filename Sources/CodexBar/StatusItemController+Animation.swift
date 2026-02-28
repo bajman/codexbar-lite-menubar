@@ -425,6 +425,9 @@ extension StatusItemController {
     }
 
     private func setButtonImage(_ image: NSImage, for button: NSStatusBarButton) {
+        if #available(macOS 26.4, *), LiquidGlassAvailability.shouldApplyGlass {
+            image.isTemplate = false
+        }
         if button.image === image { return }
         button.image = image
     }

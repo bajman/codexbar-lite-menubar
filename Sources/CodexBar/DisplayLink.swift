@@ -1,10 +1,8 @@
 import AppKit
-import CoreVideo
 import Observation
 import QuartzCore
 
-/// Minimal display link driver using NSScreen.displayLink on macOS 15+,
-/// and CVDisplayLink on macOS 14.
+/// Minimal display link driver using macOS 15+ display links, with a timer fallback on older systems.
 /// Publishes ticks on the main thread at the requested frame rate.
 @MainActor
 @Observable
@@ -12,7 +10,7 @@ final class DisplayLinkDriver {
     // Published counter used to drive SwiftUI updates.
     var tick: Int = 0
     private var displayLink: CADisplayLink?
-    private var cvDisplayLink: CVDisplayLink?
+    private var timer: Timer?
     private var targetInterval: CFTimeInterval = 1.0 / 60.0
     private var lastTickTimestamp: CFTimeInterval = 0
     private let onTick: (() -> Void)?
@@ -22,13 +20,12 @@ final class DisplayLinkDriver {
     }
 
     func start(fps: Double = 12) {
-        guard self.displayLink == nil, self.cvDisplayLink == nil else { return }
+        guard self.displayLink == nil, self.timer == nil else { return }
         let clampedFps = max(fps, 1)
         self.targetInterval = 1.0 / clampedFps
         self.lastTickTimestamp = 0
         if #available(macOS 15, *), let screen = NSScreen.main {
-            // NSScreen.displayLink is macOS 15+ only.
-            let displayLink = screen.displayLink(target: self, selector: #selector(self.step))
+            let displayLink = screen.displayLink(target: self, selector: #selector(self.step(_:)))
             let rate = Float(clampedFps)
             displayLink.preferredFrameRateRange = CAFrameRateRange(
                 minimum: rate,
@@ -37,20 +34,18 @@ final class DisplayLinkDriver {
             displayLink.add(to: .main, forMode: .common)
             self.displayLink = displayLink
         } else {
-            self.startCVDisplayLink()
+            self.startTimer()
         }
     }
 
     func stop() {
         self.displayLink?.invalidate()
         self.displayLink = nil
-        if let cvDisplayLink = self.cvDisplayLink {
-            CVDisplayLinkStop(cvDisplayLink)
-        }
-        self.cvDisplayLink = nil
+        self.timer?.invalidate()
+        self.timer = nil
     }
 
-    @objc private func step(_: AnyObject) {
+    @objc private func step(_: CADisplayLink) {
         self.handleTick()
     }
 
@@ -65,27 +60,16 @@ final class DisplayLinkDriver {
         self.onTick?()
     }
 
-    private func startCVDisplayLink() {
-        var link: CVDisplayLink?
-        if CVDisplayLinkCreateWithActiveCGDisplays(&link) != kCVReturnSuccess {
-            return
+    private func startTimer() {
+        guard self.timer == nil else { return }
+        let timer = Timer.scheduledTimer(withTimeInterval: self.targetInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.handleTick()
+            }
         }
-        guard let link else { return }
-        let callback: CVDisplayLinkOutputCallback = { _, _, _, _, _, userInfo in
-            guard let userInfo else { return kCVReturnSuccess }
-            let driver = Unmanaged<DisplayLinkDriver>.fromOpaque(userInfo).takeUnretainedValue()
-            driver.scheduleTick()
-            return kCVReturnSuccess
-        }
-        CVDisplayLinkSetOutputCallback(link, callback, Unmanaged.passUnretained(self).toOpaque())
-        CVDisplayLinkStart(link)
-        self.cvDisplayLink = link
-    }
-
-    private nonisolated func scheduleTick() {
-        Task { @MainActor [weak self] in
-            self?.handleTick()
-        }
+        timer.tolerance = self.targetInterval * 0.1
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
     }
 
     deinit {

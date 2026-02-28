@@ -186,6 +186,7 @@ struct UsageMenuCardView: View {
         .padding(.top, 2)
         .padding(.bottom, 2)
         .frame(width: self.width, alignment: .leading)
+        .menuGlassBackground(layer: .card, cornerRadius: 12)
     }
 
     private var hasDetails: Bool {

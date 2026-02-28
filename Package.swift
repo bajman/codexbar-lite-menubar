@@ -101,7 +101,7 @@ packageTargets.append(
 let package = Package(
     name: "CodexBar",
     platforms: [
-        .macOS(.v14),
+        .macOS(.v26),
     ],
     dependencies: packageDependencies,
     targets: packageTargets,

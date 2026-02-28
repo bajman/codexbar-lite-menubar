@@ -372,29 +372,23 @@ struct MenuPanelContentView: View {
 
 // MARK: - Action Button Style
 
-private struct MenuPanelActionButtonStyle: ButtonStyle {
-    @State private var isHovered = false
+private struct MenuPanelActionButtonStyle: ViewModifier {
+    @Environment(\.liquidGlassActive) private var isActive
 
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundStyle(.primary)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(self.isHovered ? Color.primary.opacity(0.08) : .clear))
-            .onHover { hovering in
-                self.isHovered = hovering
-            }
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(macOS 26, *), self.isActive && LiquidGlassAvailability.shouldApplyGlass {
+            content.buttonStyle(.glass)
+        } else {
+            content
+        }
     }
 }
 
 extension View {
     @ViewBuilder
     fileprivate func menuPanelActionButtonStyle() -> some View {
-        if #available(macOS 26, *), LiquidGlassAvailability.shouldApplyGlass {
-            self.buttonStyle(.glass)
-        } else {
-            self.buttonStyle(MenuPanelActionButtonStyle())
-        }
+        self.modifier(MenuPanelActionButtonStyle())
     }
 }
 

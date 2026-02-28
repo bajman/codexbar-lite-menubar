@@ -42,7 +42,7 @@ public struct CostUsageFetcher: Sendable {
             options.refreshMinIntervalSeconds = 0
             options.forceRescan = true
         }
-        var daily = CostUsageScanner.loadDailyReport(
+        let daily = CostUsageScanner.loadDailyReport(
             provider: provider,
             since: since,
             until: until,

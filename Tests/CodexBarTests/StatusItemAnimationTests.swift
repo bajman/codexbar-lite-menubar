@@ -322,6 +322,45 @@ struct StatusItemAnimationTests {
     }
 
     @Test
+    func menuBarPercentAutomaticUsesMostConstrainedLaneForClaude() {
+        let settings = SettingsStore(
+            configStore: testConfigStore(suiteName: "StatusItemAnimationTests-claude-automatic"),
+            zaiTokenStore: NoopZaiTokenStore())
+        settings.statusChecksEnabled = false
+        settings.refreshFrequency = .manual
+        settings.mergeIcons = false
+        settings.selectedMenuProvider = .claude
+        settings.setMenuBarMetricPreference(.automatic, for: .claude)
+
+        let registry = ProviderRegistry.shared
+        if let claudeMeta = registry.metadata[.claude] {
+            settings.setProviderEnabled(provider: .claude, metadata: claudeMeta, enabled: true)
+        }
+
+        let fetcher = UsageFetcher()
+        let store = UsageStore(fetcher: fetcher, browserDetection: BrowserDetection(cacheTTL: 0), settings: settings)
+        let controller = StatusItemController(
+            store: store,
+            settings: settings,
+            account: fetcher.loadAccountInfo(),
+            updater: DisabledUpdaterController(),
+            preferencesSelection: PreferencesSelection(),
+            statusBar: self.makeStatusBarForTesting())
+
+        let snapshot = UsageSnapshot(
+            primary: RateWindow(usedPercent: 12, windowMinutes: nil, resetsAt: nil, resetDescription: nil),
+            secondary: RateWindow(usedPercent: 42, windowMinutes: 10080, resetsAt: nil, resetDescription: nil),
+            updatedAt: Date())
+
+        store._setSnapshotForTesting(snapshot, provider: .claude)
+        store._setErrorForTesting(nil, provider: .claude)
+
+        let window = controller.menuBarMetricWindow(for: .claude, snapshot: snapshot)
+
+        #expect(window?.usedPercent == 42)
+    }
+
+    @Test
     func menuBarPercentUsesAverageForGemini() {
         let settings = SettingsStore(
             configStore: testConfigStore(suiteName: "StatusItemAnimationTests-average"),
@@ -423,7 +462,35 @@ struct StatusItemAnimationTests {
             now: now)
 
         #expect(pace == nil)
-        #expect(both == nil)
+        #expect(both == "40%")
+    }
+
+    @Test
+    func menuBarDisplayTextShowsCompactPaceForClaudeEarlyInWeeklyWindow() {
+        let now = Date(timeIntervalSince1970: 0)
+        let window = RateWindow(
+            usedPercent: 1,
+            windowMinutes: 10080,
+            resetsAt: now.addingTimeInterval((7 * 24 * 60 * 60) - (3 * 60 * 60)),
+            resetDescription: nil)
+
+        let pace = MenuBarDisplayText.displayText(
+            mode: .pace,
+            provider: .claude,
+            percentWindow: window,
+            paceWindow: window,
+            showUsed: true,
+            now: now)
+        let both = MenuBarDisplayText.displayText(
+            mode: .both,
+            provider: .claude,
+            percentWindow: RateWindow(usedPercent: 5, windowMinutes: nil, resetsAt: nil, resetDescription: nil),
+            paceWindow: window,
+            showUsed: true,
+            now: now)
+
+        #expect(pace == "-1%")
+        #expect(both == "5% · -1%")
     }
 
     @Test

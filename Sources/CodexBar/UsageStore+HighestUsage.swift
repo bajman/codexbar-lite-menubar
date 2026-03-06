@@ -38,17 +38,7 @@ extension UsageStore {
             let usedPercent = (primary.usedPercent + secondary.usedPercent) / 2
             return RateWindow(usedPercent: usedPercent, windowMinutes: nil, resetsAt: nil, resetDescription: nil)
         case .automatic:
-            if provider == .factory || provider == .kimi {
-                return snapshot.secondary ?? snapshot.primary
-            }
-            if provider == .copilot,
-               let primary = snapshot.primary,
-               let secondary = snapshot.secondary
-            {
-                // Copilot can expose chat + completions quotas; rank by the more constrained one.
-                return primary.usedPercent >= secondary.usedPercent ? primary : secondary
-            }
-            return snapshot.primary ?? snapshot.secondary
+            return MenuBarMetricResolver.automaticWindow(for: provider, snapshot: snapshot)
         }
     }
 

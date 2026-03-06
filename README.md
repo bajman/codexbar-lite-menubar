@@ -1,191 +1,182 @@
 # CodexBar Lite
 
-CodexBar Lite is a macOS menu bar app that keeps the CodexBar UI and UX, but enforces a low-overhead data path:
+CodexBar Lite is a lightweight macOS menu bar app for watching Codex and Claude usage.
 
-- providers: `codex`, `claude` only
-- acquisition: local credentials + direct `URLSession` API calls
-- no WebView scraping
-- no browser cookie import/decryption
-- no PTY/CLI/RPC probing
+This repository is a fork of the original [steipete/CodexBar](https://github.com/steipete/CodexBar), and that
+credit should be front and center: the core product idea, menu bar interface, and original CodexBar foundation
+come from Peter Steinberger's upstream project.
 
-This repo is intended for users who want CodexBar’s interface without the heavy fallback pipeline.
+## Upstream Credit
 
-## What You Get
+- original project: [steipete/CodexBar](https://github.com/steipete/CodexBar)
+- this fork: [bajman/codexbar-lite-menubar](https://github.com/bajman/codexbar-lite-menubar)
 
-- CodexBar menu bar UI, provider cards, and reset countdowns
-- merge-icons mode (`codex`, `claude`, `combined`)
-- WidgetKit widget (two-provider model)
-- local cost usage display
-- bundled helper CLI: `CodexBar.app/Contents/Helpers/CodexBarCLI`
+This fork keeps upstream attribution in the repository and in the app itself. See [NOTICE.md](NOTICE.md) and
+[LICENSE](LICENSE) for licensing details.
 
-## Lite Policy (Enforced)
+## What This Fork Is
 
-- Allowed:
-  - local credential read
-  - direct API fetch through `URLSession`
-- Forbidden:
-  - WebView/dashboard scraping
-  - browser cookie import/decryption
-  - PTY probing
-  - `codex ... app-server` probing
-- Auth errors:
-  - `401/403` returns explicit terminal guidance:
-    - Codex: run `codex login`
-    - Claude: run `claude login`
-  - no fallback cascade and no silent refresh path in lite mode
+Upstream CodexBar is a broader menu bar tracker. This fork narrows the product down to a smaller, stricter,
+lower-overhead variant:
 
-## Credential Sources
+- provider scope is reduced to `codex` and `claude`
+- acquisition paths are intentionally simple
+- WebView scraping and browser cookie import are avoided
+- terminal UI scraping is avoided
+- the app favors direct credential-backed fetches and local log analysis
 
-- Codex: `~/.codex/auth.json`
-- Claude: Keychain service `Claude Code-credentials` first, then `~/.claude` file fallback
+The result is a more opinionated fork that tries to keep the UI benefits of CodexBar while cutting down on
+fragile fallback machinery.
 
-## Quick Start
+## What This Fork Changes On Top Of Upstream
 
-### 1. Requirements
+The most important fork-specific changes are:
 
-- macOS 14+
-- Xcode + command line tools
-- authenticated `codex` and `claude` CLIs
+- a lighter fetch policy centered on direct `URLSession` requests and local log scanning
+- Codex support via direct OAuth/API usage and credits fetches
+- Claude support via a Claude-Code-compatible lightweight quota probe
+- Claude `auto` mode that prefers the live Claude-Code-style probe and falls back to local logs only when live
+  auth is unavailable
+- conservative retry, cache, and backoff behavior so the app does not hammer provider endpoints
+- local token-cost scanning for Codex and Claude JSONL logs
+- menu bar glass, spacing, and layout refinements
+- titled-window chrome normalization so the native macOS traffic lights and titlebar spacing behave correctly
+- a bundled helper CLI for validation, scripting, and debugging
 
-### 2. Clone
+More recent hardening work in this fork includes:
+
+- preventing stale Claude expiry metadata from being treated as a hard failure when the token still works
+- replacing the old Claude usage endpoint path with the quota-header path Claude Code itself appears to use
+- keeping Claude polling quiet with a success TTL, minimum probe intervals, and exponential backoff
+- tearing down hidden menu content more aggressively to reduce unnecessary offscreen work
+- precomputing chart input state to reduce render churn
+- cleaning up panel spacing and Liquid Glass layering so the menu looks more balanced
+
+## What The App Shows
+
+CodexBar Lite is a glanceable menu bar surface for:
+
+- Codex session usage
+- Codex weekly usage
+- Codex credits
+- Codex and Claude local cost views
+- Claude session usage
+- Claude weekly usage
+- provider status links
+- recent refresh state and source information
+
+It also includes:
+
+- a bundled CLI helper at `CodexBar.app/Contents/Helpers/CodexBarCLI`
+- provider settings in-app
+- a menubar-focused Liquid Glass presentation
+
+## Provider Behavior
+
+### Codex
+
+- credentials: `~/.codex/auth.json`
+- live source: direct OAuth/API fetch
+- credits: supported
+- source modes: `auto` and `oauth` are effectively the same in lite mode
+
+### Claude
+
+- credentials: local Claude OAuth material from Keychain and Claude config data
+- primary live source: a lightweight quota request that mirrors Claude Code behavior closely
+- fallback source: local Claude logs when live auth is unavailable
+- source modes:
+  - `auto`: live quota probe first, local fallback only when needed
+  - `oauth`: live quota probe only
+
+## Lite Policy
+
+This fork deliberately avoids the heavier acquisition paths that often become brittle:
+
+Allowed:
+
+- local credential reads
+- direct network fetches using those credentials
+- local log scanning for token-cost and fallback usage estimation
+
+Avoided:
+
+- embedded web dashboard scraping
+- browser cookie scraping or decryption
+- PTY automation or TUI scraping
+- large fallback cascades across unrelated acquisition paths
+
+## Build And Run
+
+Normal development loop:
 
 ```bash
-git clone https://github.com/<your-user>/codexbar-lite-menubar.git
-cd codexbar-lite-menubar
-git checkout lightweight-fetch
+./Scripts/compile_and_run.sh
 ```
 
-### 3. Run setup
+That script:
+
+- kills running CodexBar instances
+- packages the app bundle
+- relaunches the app
+- verifies that `CodexBar` stays running
+
+Manual validation loop:
 
 ```bash
-./Scripts/setup-lite.sh
-```
-
-`setup-lite.sh` does all of this:
-
-- validates branch/toolchain/CLI auth files
-- blocks install if MeterBar is installed or running
-- builds and packages the app
-- installs to `/Applications/CodexBar.app`
-- launches the app
-- runs helper CLI health checks for both providers
-
-## Manual Build/Install
-
-```bash
-swift package resolve
-swift build
 swift test
-CODEXBAR_SIGNING=adhoc ./Scripts/package_app.sh
-cp -R CodexBar.app /Applications/CodexBar.app
-open /Applications/CodexBar.app
+pnpm check
+./Scripts/compile_and_run.sh
 ```
 
-## Operational Validation
-
-Check provider fetches:
+Package only:
 
 ```bash
-/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI usage --provider codex --source oauth --json-only
-/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI usage --provider claude --source oauth --json-only
+./Scripts/package_app.sh
+open CodexBar.app
 ```
 
-Idle performance checks:
+## Helper CLI
+
+The packaged app includes a CLI helper:
+
+```text
+CodexBar.app/Contents/Helpers/CodexBarCLI
+```
+
+Examples:
 
 ```bash
-pgrep -x CodexBar
-ps -p "$(pgrep -x CodexBar)" -o %cpu=,rss=,command=
-lsof -nP -a -p "$(pgrep -x CodexBar)" -i
+./CodexBar.app/Contents/Helpers/CodexBarCLI usage --provider codex --source oauth --format json --pretty
+./CodexBar.app/Contents/Helpers/CodexBarCLI usage --provider claude --source auto --format json --pretty
+./CodexBar.app/Contents/Helpers/CodexBarCLI cost --provider all --format json --pretty
 ```
-
-Heavy-path regression checks:
-
-```bash
-rg -n "SweetCookieKit|OpenAIDashboardScraper|CodexStatusProbe|ClaudeStatusProbe|Sparkle" Sources Package.swift Scripts
-```
-
-## Preflight Gate
-
-Preflight artifact:
-
-- `docs/lite/preflight.md`
-- `docs/lite/widget-guidelines.md` (Apple WidgetKit/HIG alignment notes)
-
-It captures only:
-
-- endpoint URL
-- HTTP status
-- key/field presence
-- pass/fail
-
-No secrets, emails, raw bodies, or numeric account values should be committed there.
-
-Mandatory rerun triggers after any rebase/change touching:
-
-- `Package.swift`
-- `Sources/CodexBarCore/UsageFetcher.swift`
-- any provider descriptor
-- any file under `Sources/CodexBarCore/Providers/Codex/`
-- any file under `Sources/CodexBarCore/Providers/Claude/`
-
-## Config Contract (Lite)
-
-Retained fields:
-
-- `version`
-- `providers[]`
-- provider `id`, `enabled`, `source`
-
-Allowed provider IDs:
-
-- `codex`
-- `claude`
-
-Allowed source values:
-
-- `auto`
-- `oauth`
-
-Lite semantics:
-
-- `auto` and `oauth` are treated identically
-
-Dropped/ignored legacy fields:
-
-- `apiKey`
-- `cookieHeader`
-- `cookieSource`
-- `region`
-- `workspaceID`
-- `tokenAccounts`
 
 ## Repository Layout
 
-- `Sources/CodexBarCore/Providers/Claude/ClaudeLiteFetcher.swift`
-- `Sources/CodexBarCore/Providers/Codex/CodexLiteFetcher.swift`
+- `Sources/CodexBar`: app UI, menu bar, windows, presentation
+- `Sources/CodexBarCore`: providers, credential handling, fetchers, caching, local scanners
+- `Sources/CodexBarCLI`: bundled helper CLI
+- `Tests`: Swift Testing coverage
+- `TestsLite`: lite-policy and robustness coverage
+- `Scripts`: build, packaging, release, and validation helpers
+- `docs`: provider notes, architecture docs, release docs, and fork audits
+
+## Important Fork-Specific Files
+
+- `Sources/CodexBarCore/Providers/Codex/`
+- `Sources/CodexBarCore/Providers/Claude/`
 - `Sources/CodexBarCore/Providers/LitePolicy.swift`
-- `Scripts/setup-lite.sh`
-- `docs/lite/preflight.md`
+- `Sources/CodexBarCore/Vendored/CostUsage/`
+- `Sources/CodexBar/LiquidGlassStyle.swift`
+- `Sources/CodexBar/MenuPanelContentView.swift`
+- `Sources/CodexBar/NativeWindowChrome.swift`
 
-## Attribution and Licensing
+## Attribution And License
 
-This project is based on upstream CodexBar and preserves its MIT license obligations.
+This is a downstream fork, not a clean-room reimplementation.
 
-- upstream source: [steipete/CodexBar](https://github.com/steipete/CodexBar)
-- reference implementation for lightweight fetch model: [shipshitdev/meterbar.app](https://github.com/shipshitdev/meterbar.app)
+- original source and credit: [steipete/CodexBar](https://github.com/steipete/CodexBar)
+- maintained fork: [bajman/codexbar-lite-menubar](https://github.com/bajman/codexbar-lite-menubar)
 
-See [NOTICE.md](NOTICE.md) and [LICENSE](LICENSE) for details.
-
-## Maintenance (Rebase Workflow)
-
-```bash
-git fetch origin
-git rebase origin/main
-```
-
-After any rebase that touches preflight trigger paths:
-
-1. rerun preflight checks
-2. run `swift build` + `swift test`
-3. rerun setup script
-4. verify helper CLI usage outputs
+See [NOTICE.md](NOTICE.md) and [LICENSE](LICENSE).

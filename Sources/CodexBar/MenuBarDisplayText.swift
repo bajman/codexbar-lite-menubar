@@ -11,7 +11,9 @@ enum MenuBarDisplayText {
 
     static func paceText(provider: UsageProvider, window: RateWindow?, now: Date = .init()) -> String? {
         guard let window else { return nil }
-        guard let pace = UsagePaceText.weeklyPace(provider: provider, window: window, now: now) else { return nil }
+        guard provider == .codex || provider == .claude else { return nil }
+        guard window.remainingPercent > 0 else { return nil }
+        guard let pace = UsagePace.weekly(window: window, now: now, defaultWindowMinutes: 10080) else { return nil }
         let deltaValue = Int(abs(pace.deltaPercent).rounded())
         let sign = pace.deltaPercent >= 0 ? "+" : "-"
         return "\(sign)\(deltaValue)%"
@@ -31,9 +33,18 @@ enum MenuBarDisplayText {
         case .pace:
             return self.paceText(provider: provider, window: paceWindow, now: now)
         case .both:
-            guard let percent = percentText(window: percentWindow, showUsed: showUsed) else { return nil }
-            guard let pace = Self.paceText(provider: provider, window: paceWindow, now: now) else { return nil }
-            return "\(percent) · \(pace)"
+            let percent = self.percentText(window: percentWindow, showUsed: showUsed)
+            let pace = Self.paceText(provider: provider, window: paceWindow, now: now)
+            switch (percent, pace) {
+            case let (.some(percent), .some(pace)):
+                return "\(percent) · \(pace)"
+            case let (.some(percent), nil):
+                return percent
+            case let (nil, .some(pace)):
+                return pace
+            case (nil, nil):
+                return nil
+            }
         }
     }
 }

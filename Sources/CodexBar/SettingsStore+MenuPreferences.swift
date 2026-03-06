@@ -1,6 +1,22 @@
 import CodexBarCore
 import Foundation
 
+enum MenuBarMetricResolver {
+    static func automaticWindow(for provider: UsageProvider, snapshot: UsageSnapshot?) -> RateWindow? {
+        switch provider {
+        case .factory, .kimi:
+            return snapshot?.secondary ?? snapshot?.primary
+        case .claude, .copilot:
+            guard let primary = snapshot?.primary, let secondary = snapshot?.secondary else {
+                return snapshot?.primary ?? snapshot?.secondary
+            }
+            return primary.usedPercent >= secondary.usedPercent ? primary : secondary
+        default:
+            return snapshot?.primary ?? snapshot?.secondary
+        }
+    }
+}
+
 extension SettingsStore {
     func menuBarMetricPreference(for provider: UsageProvider) -> MenuBarMetricPreference {
         if provider == .zai { return .primary }

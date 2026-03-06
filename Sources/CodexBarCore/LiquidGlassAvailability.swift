@@ -30,13 +30,9 @@ public enum LiquidGlassAvailability: Sendable {
 
     #if canImport(AppKit)
     public static var shouldApplyGlass: Bool {
-        #if DEBUG
-        return true
-        #else
         guard #available(macOS 26.4, *) else { return false }
         return isGlassEnabled()
             && !NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
-        #endif
     }
     #else
     public static var shouldApplyGlass: Bool {

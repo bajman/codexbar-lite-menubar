@@ -150,7 +150,7 @@ public enum ClaudeOAuthCredentialsError: LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .decodeFailed:
-            return "Claude OAuth credentials are invalid."
+            return "Claude session data could not be read. Open Terminal and run `claude` to authenticate."
         case .missingOAuth:
             return "Claude OAuth credentials missing. Run `claude` to authenticate."
         case .missingAccessToken:
@@ -177,7 +177,7 @@ public enum ClaudeOAuthCredentialsError: LocalizedError, Sendable {
         case .noRefreshToken:
             return "Claude OAuth refresh token missing. Run `claude` to authenticate."
         case .refreshDelegatedToClaudeCLI:
-            return "Claude OAuth refresh is delegated to Claude CLI."
+            return "Claude session expired. Open Terminal and run `claude` to refresh it."
         }
     }
 }

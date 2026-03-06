@@ -42,7 +42,7 @@ struct ClaudeProviderImplementation: ProviderImplementation {
 
     @MainActor
     func defaultSourceLabel(context: ProviderSourceLabelContext) -> String? {
-        context.settings.claudeUsageDataSource.rawValue
+        context.settings.claudeUsageDataSource.sourceLabel
     }
 
     @MainActor
@@ -123,7 +123,8 @@ struct ClaudeProviderImplementation: ProviderImplementation {
             ProviderSettingsPickerDescriptor(
                 id: "claude-usage-source",
                 title: "Usage source",
-                subtitle: "Lite mode allows direct OAuth usage fetch only.",
+                subtitle: "Auto uses the same lightweight quota probe as Claude Code "
+                    + "and falls back to local logs only when live auth is unavailable.",
                 binding: usageBinding,
                 options: usageOptions,
                 isVisible: nil,
@@ -131,7 +132,7 @@ struct ClaudeProviderImplementation: ProviderImplementation {
                 trailingText: {
                     guard context.settings.claudeUsageDataSource == .auto else { return nil }
                     let label = context.store.sourceLabel(for: .claude)
-                    return label == "auto" ? nil : label
+                    return label == ClaudeUsageDataSource.auto.sourceLabel ? nil : label
                 }),
             ProviderSettingsPickerDescriptor(
                 id: "claude-keychain-prompt-policy",
@@ -160,7 +161,11 @@ struct ClaudeProviderImplementation: ProviderImplementation {
 
     @MainActor
     func appendUsageMenuEntries(context: ProviderMenuUsageContext, entries: inout [ProviderMenuEntry]) {
-        if context.snapshot?.secondary == nil {
+        let isLocalSource = context.store.sourceLabel(for: .claude)
+            .localizedCaseInsensitiveContains(ClaudeUsageSourceLabels.local)
+        if context.snapshot?.secondary == nil, isLocalSource {
+            entries.append(.text("7-day quota is unavailable from local Claude logs.", .secondary))
+        } else if context.snapshot?.secondary == nil {
             entries.append(.text("Weekly usage unavailable for this account.", .secondary))
         }
 

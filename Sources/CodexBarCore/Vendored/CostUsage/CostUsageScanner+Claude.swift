@@ -3,6 +3,24 @@ import Foundation
 extension CostUsageScanner {
     // MARK: - Claude
 
+    struct ClaudeRecentUsageEntry: Sendable, Equatable {
+        let timestamp: Date
+        let model: String
+        let inputTokens: Int
+        let cacheReadTokens: Int
+        let cacheCreationTokens: Int
+        let outputTokens: Int
+
+        var totalTokens: Int {
+            self.inputTokens + self.cacheReadTokens + self.cacheCreationTokens + self.outputTokens
+        }
+    }
+
+    struct ClaudeRecentUsageReport: Sendable, Equatable {
+        let entries: [ClaudeRecentUsageEntry]
+        let foundAnyLogs: Bool
+    }
+
     private static func defaultClaudeProjectsRoots(options: Options) -> [URL] {
         if let override = options.claudeProjectsRoots { return override }
 
@@ -76,64 +94,159 @@ extension CostUsageScanner {
             maxLineBytes: maxLineBytes,
             prefixBytes: prefixBytes,
             onLine: { line in
-                guard !line.bytes.isEmpty else { return }
                 guard !line.wasTruncated else { return }
-                guard line.bytes.containsAscii(#""type":"assistant""#) else { return }
-                guard line.bytes.containsAscii(#""usage""#) else { return }
-
-                guard
-                    let obj = (try? JSONSerialization.jsonObject(with: line.bytes)) as? [String: Any],
-                    let type = obj["type"] as? String,
-                    type == "assistant"
+                guard let entry = Self.parseClaudeRecentUsageLine(
+                    line.bytes,
+                    providerFilter: providerFilter,
+                    seenKeys: &seenKeys)
                 else { return }
-                guard Self.matchesClaudeProviderFilter(obj: obj, filter: providerFilter) else { return }
 
-                guard let tsText = obj["timestamp"] as? String else { return }
-                guard let dayKey = Self.dayKeyFromTimestamp(tsText) ?? Self.dayKeyFromParsedISO(tsText) else { return }
-
-                guard let message = obj["message"] as? [String: Any] else { return }
-                guard let model = message["model"] as? String else { return }
-                guard let usage = message["usage"] as? [String: Any] else { return }
-
-                // Deduplicate by message.id + requestId (streaming chunks have same usage).
-                let messageId = message["id"] as? String
-                let requestId = obj["requestId"] as? String
-                if let messageId, let requestId {
-                    let key = "\(messageId):\(requestId)"
-                    if seenKeys.contains(key) { return }
-                    seenKeys.insert(key)
-                } else {
-                    // Older logs omit IDs; treat each line as distinct to avoid dropping usage.
-                }
-
-                func toInt(_ v: Any?) -> Int {
-                    if let n = v as? NSNumber { return n.intValue }
-                    return 0
-                }
-
-                let input = max(0, toInt(usage["input_tokens"]))
-                let cacheCreate = max(0, toInt(usage["cache_creation_input_tokens"]))
-                let cacheRead = max(0, toInt(usage["cache_read_input_tokens"]))
-                let output = max(0, toInt(usage["output_tokens"]))
-                if input == 0, cacheCreate == 0, cacheRead == 0, output == 0 { return }
-
+                let dayKey = CostUsageDayRange.dayKey(from: entry.timestamp)
                 let cost = CostUsagePricing.claudeCostUSD(
-                    model: model,
-                    inputTokens: input,
-                    cacheReadInputTokens: cacheRead,
-                    cacheCreationInputTokens: cacheCreate,
-                    outputTokens: output)
+                    model: entry.model,
+                    inputTokens: entry.inputTokens,
+                    cacheReadInputTokens: entry.cacheReadTokens,
+                    cacheCreationInputTokens: entry.cacheCreationTokens,
+                    outputTokens: entry.outputTokens)
                 let costNanos = cost.map { Int(($0 * costScale).rounded()) } ?? 0
                 let tokens = ClaudeTokens(
-                    input: input,
-                    cacheRead: cacheRead,
-                    cacheCreate: cacheCreate,
-                    output: output,
+                    input: entry.inputTokens,
+                    cacheRead: entry.cacheReadTokens,
+                    cacheCreate: entry.cacheCreationTokens,
+                    output: entry.outputTokens,
                     costNanos: costNanos)
-                add(dayKey: dayKey, model: model, tokens: tokens)
+                add(dayKey: dayKey, model: entry.model, tokens: tokens)
             })) ?? startOffset
 
         return ClaudeParseResult(days: days, parsedBytes: parsedBytes)
+    }
+
+    static func loadClaudeRecentUsage(
+        since: Date,
+        until: Date,
+        options: Options = Options()) -> ClaudeRecentUsageReport
+    {
+        let roots = self.defaultClaudeProjectsRoots(options: options)
+        let providerFilter = options.claudeLogProviderFilter
+        let minimumModificationDate = since
+
+        let keys: [URLResourceKey] = [
+            .isRegularFileKey,
+            .contentModificationDateKey,
+            .fileSizeKey,
+        ]
+
+        var entries: [ClaudeRecentUsageEntry] = []
+        var seenKeys: Set<String> = []
+        var foundAnyLogs = false
+
+        for root in roots {
+            guard let enumerator = FileManager.default.enumerator(
+                at: root,
+                includingPropertiesForKeys: keys,
+                options: [.skipsHiddenFiles, .skipsPackageDescendants])
+            else {
+                continue
+            }
+
+            for case let url as URL in enumerator {
+                guard url.pathExtension.lowercased() == "jsonl" else { continue }
+                guard let values = try? url.resourceValues(forKeys: Set(keys)) else { continue }
+                guard values.isRegularFile == true else { continue }
+                guard (values.fileSize ?? 0) > 0 else { continue }
+
+                foundAnyLogs = true
+                if let modifiedAt = values.contentModificationDate,
+                   modifiedAt < minimumModificationDate
+                {
+                    continue
+                }
+
+                let maxLineBytes = 512 * 1024
+                let prefixBytes = maxLineBytes
+                _ = try? CostUsageJsonl.scan(
+                    fileURL: url,
+                    maxLineBytes: maxLineBytes,
+                    prefixBytes: prefixBytes,
+                    onLine: { line in
+                        guard !line.wasTruncated else { return }
+                        guard let entry = Self.parseClaudeRecentUsageLine(
+                            line.bytes,
+                            providerFilter: providerFilter,
+                            seenKeys: &seenKeys)
+                        else {
+                            return
+                        }
+                        guard entry.timestamp >= since, entry.timestamp <= until else { return }
+                        entries.append(entry)
+                    })
+            }
+        }
+
+        entries.sort { lhs, rhs in
+            if lhs.timestamp != rhs.timestamp {
+                return lhs.timestamp < rhs.timestamp
+            }
+            if lhs.totalTokens != rhs.totalTokens {
+                return lhs.totalTokens < rhs.totalTokens
+            }
+            return lhs.model < rhs.model
+        }
+        return ClaudeRecentUsageReport(entries: entries, foundAnyLogs: foundAnyLogs)
+    }
+
+    private static func parseClaudeRecentUsageLine(
+        _ line: Data,
+        providerFilter: ClaudeLogProviderFilter,
+        seenKeys: inout Set<String>) -> ClaudeRecentUsageEntry?
+    {
+        guard !line.isEmpty else { return nil }
+        guard line.containsAscii(#""type":"assistant""#) else { return nil }
+        guard line.containsAscii(#""usage""#) else { return nil }
+
+        guard
+            let obj = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any],
+            let type = obj["type"] as? String,
+            type == "assistant"
+        else { return nil }
+        guard Self.matchesClaudeProviderFilter(obj: obj, filter: providerFilter) else { return nil }
+
+        guard let tsText = obj["timestamp"] as? String,
+              let timestamp = Self.parsedISODate(tsText)
+        else { return nil }
+        guard let message = obj["message"] as? [String: Any],
+              let model = message["model"] as? String,
+              let usage = message["usage"] as? [String: Any]
+        else { return nil }
+
+        let messageId = message["id"] as? String
+        let requestId = obj["requestId"] as? String
+        if let messageId, let requestId {
+            let key = "\(messageId):\(requestId)"
+            if seenKeys.contains(key) { return nil }
+            seenKeys.insert(key)
+        }
+
+        func toInt(_ value: Any?) -> Int {
+            if let number = value as? NSNumber { return number.intValue }
+            return 0
+        }
+
+        let input = max(0, toInt(usage["input_tokens"]))
+        let cacheCreate = max(0, toInt(usage["cache_creation_input_tokens"]))
+        let cacheRead = max(0, toInt(usage["cache_read_input_tokens"]))
+        let output = max(0, toInt(usage["output_tokens"]))
+        if input == 0, cacheCreate == 0, cacheRead == 0, output == 0 {
+            return nil
+        }
+
+        return ClaudeRecentUsageEntry(
+            timestamp: timestamp,
+            model: model,
+            inputTokens: input,
+            cacheReadTokens: cacheRead,
+            cacheCreationTokens: cacheCreate,
+            outputTokens: output)
     }
 
     private static let vertexProviderKeys: Set<String> = [

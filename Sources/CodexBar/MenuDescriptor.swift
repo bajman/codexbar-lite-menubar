@@ -110,10 +110,17 @@ struct MenuDescriptor {
         includeContextualActions: Bool = true) -> [Section]
     {
         var sections: [Section] = []
+        if let statusLine = Self.statusLine(for: provider, store: store) {
+            sections.append(Section(entries: [.text(statusLine, .secondary)]))
+        }
         if includeContextualActions {
             let actions = Self.actionsSection(for: provider, store: store, account: account)
-            if !actions.entries.isEmpty {
-                sections.append(actions)
+            let actionEntries = actions.entries.filter { entry in
+                if case .action = entry { return true }
+                return false
+            }
+            if !actionEntries.isEmpty {
+                sections.append(Section(entries: actionEntries))
             }
         }
         sections.append(Self.metaSection(updateReady: updateReady))
@@ -425,8 +432,7 @@ private enum AccountFormatter {
 extension MenuDescriptor.MenuAction {
     var systemImageName: String? {
         switch self {
-        case .installUpdate, .settings, .about, .quit:
-            nil
+        case .installUpdate: "arrow.down.circle"
         case .refresh: MenuDescriptor.MenuActionSystemImage.refresh.rawValue
         case .refreshAugmentSession: MenuDescriptor.MenuActionSystemImage.refresh.rawValue
         case .dashboard: MenuDescriptor.MenuActionSystemImage.dashboard.rawValue
@@ -434,6 +440,9 @@ extension MenuDescriptor.MenuAction {
         case .switchAccount: MenuDescriptor.MenuActionSystemImage.switchAccount.rawValue
         case .openTerminal: MenuDescriptor.MenuActionSystemImage.openTerminal.rawValue
         case .loginToProvider: MenuDescriptor.MenuActionSystemImage.loginToProvider.rawValue
+        case .settings: MenuDescriptor.MenuActionSystemImage.settings.rawValue
+        case .about: MenuDescriptor.MenuActionSystemImage.about.rawValue
+        case .quit: MenuDescriptor.MenuActionSystemImage.quit.rawValue
         case .copyError: MenuDescriptor.MenuActionSystemImage.copyError.rawValue
         }
     }

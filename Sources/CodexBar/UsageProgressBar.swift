@@ -32,7 +32,7 @@ struct UsageProgressBar: View {
         if self.isHighlighted {
             return MenuHighlightStyle.selectionText
         }
-        return self.paceOnTop ? .secondary : Color(nsColor: .systemRed)
+        return self.paceOnTop ? .secondary : .red
     }
 
     private var resolvedProgressTint: Color {
@@ -41,7 +41,7 @@ struct UsageProgressBar: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let markerWidth: CGFloat = 2
+            let markerWidth: CGFloat = 2.5
             let paceX = proxy.size.width * Self.clampedPercent(self.pacePercent) / 100
             let markerOffset = max(0, min(proxy.size.width - markerWidth, paceX - (markerWidth / 2)))
             ZStack(alignment: .leading) {
@@ -51,7 +51,7 @@ struct UsageProgressBar: View {
                     .tint(self.resolvedProgressTint)
 
                 if self.pacePercent != nil {
-                    RoundedRectangle(cornerRadius: markerWidth / 2, style: .continuous)
+                    Capsule()
                         .fill(self.paceMarkerTint)
                         .frame(width: markerWidth)
                         .offset(x: markerOffset)

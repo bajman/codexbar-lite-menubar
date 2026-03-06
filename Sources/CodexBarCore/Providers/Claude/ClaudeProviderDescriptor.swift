@@ -40,8 +40,13 @@ public enum ClaudeProviderDescriptor {
                 versionDetector: { _ in ProviderVersionDetector.claudeVersion() }))
     }
 
-    private static func resolveStrategies(context _: ProviderFetchContext) async -> [any ProviderFetchStrategy] {
-        let strategies: [any ProviderFetchStrategy] = [ClaudeLiteFetchStrategy()]
+    private static func resolveStrategies(context: ProviderFetchContext) async -> [any ProviderFetchStrategy] {
+        let strategies: [any ProviderFetchStrategy] = switch context.sourceMode {
+        case .oauth:
+            [ClaudeLiteFetchStrategy()]
+        default:
+            [ClaudeLiteFetchStrategy(), ClaudeLocalFetchStrategy()]
+        }
         LitePolicy.validateStrategies(strategies, provider: .claude)
         return strategies
     }
@@ -51,13 +56,18 @@ public enum ClaudeProviderDescriptor {
     }
 
     public static func resolveUsageStrategy(
-        selectedDataSource _: ClaudeUsageDataSource,
+        selectedDataSource: ClaudeUsageDataSource,
         webExtrasEnabled _: Bool,
         hasWebSession _: Bool,
         hasCLI _: Bool,
         hasOAuthCredentials _: Bool) -> ClaudeUsageStrategy
     {
-        ClaudeUsageStrategy(dataSource: .oauth, useWebExtras: false)
+        switch selectedDataSource {
+        case .oauth:
+            ClaudeUsageStrategy(dataSource: .oauth, useWebExtras: false)
+        case .auto, .cli, .web:
+            ClaudeUsageStrategy(dataSource: .auto, useWebExtras: false)
+        }
     }
 }
 
@@ -67,7 +77,7 @@ public struct ClaudeUsageStrategy: Equatable, Sendable {
 }
 
 struct ClaudeLiteFetchStrategy: ProviderFetchStrategy {
-    let id: String = "claude.oauth.lite"
+    let id: String = "claude.code.quota"
     let kind: ProviderFetchKind = .oauth
 
     func isAvailable(_: ProviderFetchContext) async -> Bool {
@@ -79,7 +89,28 @@ struct ClaudeLiteFetchStrategy: ProviderFetchStrategy {
         let usage = try await fetcher.fetchUsage()
         return self.makeResult(
             usage: usage,
-            sourceLabel: "oauth")
+            sourceLabel: ClaudeUsageSourceLabels.live)
+    }
+
+    func shouldFallback(on error: Error, context: ProviderFetchContext) -> Bool {
+        guard context.sourceMode == .auto else { return false }
+        return ClaudeLiteFetcher.shouldFallbackToLocalLogs(on: error)
+    }
+}
+
+struct ClaudeLocalFetchStrategy: ProviderFetchStrategy {
+    let id: String = "claude.local.logs"
+    let kind: ProviderFetchKind = .localProbe
+
+    func isAvailable(_: ProviderFetchContext) async -> Bool {
+        true
+    }
+
+    func fetch(_ context: ProviderFetchContext) async throws -> ProviderFetchResult {
+        let usage = try await ClaudeLocalUsageFetcher(environment: context.env).fetchUsage()
+        return self.makeResult(
+            usage: usage,
+            sourceLabel: ClaudeUsageSourceLabels.local)
     }
 
     func shouldFallback(on _: Error, context _: ProviderFetchContext) -> Bool {

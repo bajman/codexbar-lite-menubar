@@ -18,48 +18,47 @@ struct UsageBreakdownChartMenuView: View {
         }
     }
 
-    private let breakdown: [OpenAIDashboardDailyBreakdown]
     private let width: CGFloat
+    private let model: Model
     @State private var selectedDayKey: String?
 
     init(breakdown: [OpenAIDashboardDailyBreakdown], width: CGFloat) {
-        self.breakdown = breakdown
         self.width = width
+        self.model = Self.makeModel(from: breakdown)
     }
 
     var body: some View {
-        let model = Self.makeModel(from: self.breakdown)
-        VStack(alignment: .leading, spacing: 10) {
-            if model.points.isEmpty {
+        VStack(alignment: .leading, spacing: MenuPanelMetrics.chartSectionSpacing) {
+            if self.model.points.isEmpty {
                 Text("No usage breakdown data.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } else {
                 Chart {
-                    ForEach(model.points) { point in
+                    ForEach(self.model.points) { point in
                         BarMark(
                             x: .value("Day", point.date, unit: .day),
                             y: .value("Credits used", point.creditsUsed))
                             .foregroundStyle(by: .value("Service", point.service))
                     }
-                    if let peak = model.peakPoint {
-                        let capStart = max(peak.creditsUsed - Self.capHeight(maxValue: model.maxCreditsUsed), 0)
+                    if let peak = self.model.peakPoint {
+                        let capStart = max(peak.creditsUsed - Self.capHeight(maxValue: self.model.maxCreditsUsed), 0)
                         BarMark(
                             x: .value("Day", peak.date, unit: .day),
                             yStart: .value("Cap start", capStart),
                             yEnd: .value("Cap end", peak.creditsUsed))
-                            .foregroundStyle(Color(nsColor: .systemYellow))
+                            .foregroundStyle(.yellow)
                     }
                 }
-                .chartForegroundStyleScale(domain: model.services, range: model.serviceColors)
+                .chartForegroundStyleScale(domain: self.model.services, range: self.model.serviceColors)
                 .chartYAxis(.hidden)
                 .chartXAxis {
-                    AxisMarks(values: model.axisDates) { _ in
+                    AxisMarks(values: self.model.axisDates) { _ in
                         AxisGridLine().foregroundStyle(Color.clear)
                         AxisTick().foregroundStyle(Color.clear)
                         AxisValueLabel(format: .dateTime.month(.abbreviated).day())
                             .font(.caption2)
-                            .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
+                            .foregroundStyle(.secondary)
                     }
                 }
                 .chartLegend(.hidden)
@@ -67,15 +66,15 @@ struct UsageBreakdownChartMenuView: View {
                 .chartOverlay { proxy in
                     GeometryReader { geo in
                         ZStack(alignment: .topLeading) {
-                            if let rect = self.selectionBandRect(model: model, proxy: proxy, geo: geo) {
-                                Rectangle()
+                            if let rect = self.selectionBandRect(model: self.model, proxy: proxy, geo: geo) {
+                                RoundedRectangle(cornerRadius: MenuPanelMetrics.compactSpacing, style: .continuous)
                                     .fill(Self.selectionBandColor)
                                     .frame(width: rect.width, height: rect.height)
                                     .position(x: rect.midX, y: rect.midY)
                                     .allowsHitTesting(false)
                             }
                             MouseLocationReader { location in
-                                self.updateSelection(location: location, model: model, proxy: proxy, geo: geo)
+                                self.updateSelection(location: location, model: self.model, proxy: proxy, geo: geo)
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .contentShape(Rectangle())
@@ -83,7 +82,7 @@ struct UsageBreakdownChartMenuView: View {
                     }
                 }
 
-                let detail = self.detailLines(model: model)
+                let detail = self.detailLines(model: self.model)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(detail.primary)
                         .font(.caption)
@@ -105,12 +104,12 @@ struct UsageBreakdownChartMenuView: View {
                 LazyVGrid(
                     columns: [GridItem(.adaptive(minimum: 110), alignment: .leading)],
                     alignment: .leading,
-                    spacing: 6)
+                    spacing: MenuPanelMetrics.sectionSpacing)
                 {
-                    ForEach(model.services, id: \.self) { service in
-                        HStack(spacing: 6) {
+                    ForEach(self.model.services, id: \.self) { service in
+                        HStack(spacing: MenuPanelMetrics.compactSpacing) {
                             Circle()
-                                .fill(model.color(for: service))
+                                .fill(self.model.color(for: service))
                                 .frame(width: 7, height: 7)
                             Text(service)
                                 .font(.caption2)
@@ -121,8 +120,8 @@ struct UsageBreakdownChartMenuView: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, MenuPanelMetrics.chartSurfacePadding)
+        .padding(.vertical, MenuPanelMetrics.chartSurfacePadding)
         .frame(minWidth: self.width, maxWidth: .infinity, alignment: .leading)
     }
 
@@ -146,7 +145,7 @@ struct UsageBreakdownChartMenuView: View {
     }
 
     private static var selectionBandColor: Color {
-        Color.secondary.opacity(0.16)
+        Color.secondary.opacity(0.22)
     }
 
     private static func makeModel(from breakdown: [OpenAIDashboardDailyBreakdown]) -> Model {

@@ -221,6 +221,13 @@ struct ClaudeOAuthTests {
     }
 
     @Test
+    func formatsOAuth429AsTransientRateLimit() {
+        let err = ClaudeOAuthFetchError.rateLimited(125)
+        #expect(err.localizedDescription.contains("temporarily rate limited"))
+        #expect(err.localizedDescription.contains("about 3m"))
+    }
+
+    @Test
     func skipsExtraUsageWhenDisabled() throws {
         let json = """
         {
@@ -239,46 +246,24 @@ struct ClaudeOAuthTests {
     // MARK: - Scope-based strategy resolution
 
     @Test
-    func prefersOAuthWhenAvailable() {
+    func autoSelectionStaysAutomatic() {
         let strategy = ClaudeProviderDescriptor.resolveUsageStrategy(
             selectedDataSource: .auto,
             webExtrasEnabled: false,
             hasWebSession: true,
             hasCLI: true,
             hasOAuthCredentials: true)
+        #expect(strategy.dataSource == .auto)
+    }
+
+    @Test
+    func oauthSelectionStaysLiveOnly() {
+        let strategy = ClaudeProviderDescriptor.resolveUsageStrategy(
+            selectedDataSource: .oauth,
+            webExtrasEnabled: false,
+            hasWebSession: true,
+            hasCLI: true,
+            hasOAuthCredentials: false)
         #expect(strategy.dataSource == .oauth)
-    }
-
-    @Test
-    func fallsBackToCLIWhenOAuthMissingAndCLIAvailable() {
-        let strategy = ClaudeProviderDescriptor.resolveUsageStrategy(
-            selectedDataSource: .auto,
-            webExtrasEnabled: false,
-            hasWebSession: true,
-            hasCLI: true,
-            hasOAuthCredentials: false)
-        #expect(strategy.dataSource == .cli)
-    }
-
-    @Test
-    func fallsBackToWebWhenOAuthMissingAndCLIMissing() {
-        let strategy = ClaudeProviderDescriptor.resolveUsageStrategy(
-            selectedDataSource: .auto,
-            webExtrasEnabled: false,
-            hasWebSession: true,
-            hasCLI: false,
-            hasOAuthCredentials: false)
-        #expect(strategy.dataSource == .web)
-    }
-
-    @Test
-    func fallsBackToCLIWhenOAuthMissingAndWebMissing() {
-        let strategy = ClaudeProviderDescriptor.resolveUsageStrategy(
-            selectedDataSource: .auto,
-            webExtrasEnabled: false,
-            hasWebSession: false,
-            hasCLI: true,
-            hasOAuthCredentials: false)
-        #expect(strategy.dataSource == .cli)
     }
 }

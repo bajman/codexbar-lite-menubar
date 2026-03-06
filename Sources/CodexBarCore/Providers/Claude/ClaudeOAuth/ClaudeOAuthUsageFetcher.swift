@@ -5,6 +5,7 @@ import FoundationNetworking
 
 public enum ClaudeOAuthFetchError: LocalizedError, Sendable {
     case unauthorized
+    case rateLimited(Int?)
     case invalidResponse
     case serverError(Int, String?)
     case networkError(Error)
@@ -13,19 +14,25 @@ public enum ClaudeOAuthFetchError: LocalizedError, Sendable {
         switch self {
         case .unauthorized:
             return "Claude token expired or invalid. Run `claude login` to re-authenticate."
+        case let .rateLimited(retryAfterSeconds):
+            if let retryAfterSeconds, retryAfterSeconds > 0 {
+                let minutes = max(1, Int(ceil(Double(retryAfterSeconds) / 60)))
+                return "Claude is temporarily rate limited by Anthropic. Try again in about \(minutes)m."
+            }
+            return "Claude is temporarily rate limited by Anthropic. Try again later."
         case .invalidResponse:
-            return "Claude OAuth response was invalid."
+            return "Claude usage response was invalid."
         case let .serverError(code, body):
             if let body, !body.isEmpty {
                 let cleaned = body
                     .replacingOccurrences(of: "\n", with: " ")
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 let shortened = cleaned.count > 400 ? String(cleaned.prefix(400)) + "…" : cleaned
-                return "Claude OAuth error: HTTP \(code) – \(shortened)"
+                return "Claude usage error: HTTP \(code) – \(shortened)"
             }
-            return "Claude OAuth error: HTTP \(code)"
+            return "Claude usage error: HTTP \(code)"
         case let .networkError(error):
-            return "Claude OAuth network error: \(error.localizedDescription)"
+            return "Claude usage network error: \(error.localizedDescription)"
         }
     }
 }
@@ -60,6 +67,8 @@ enum ClaudeOAuthUsageFetcher {
                 return try Self.decodeUsageResponse(data)
             case 401, 403:
                 throw ClaudeOAuthFetchError.unauthorized
+            case 429:
+                throw ClaudeOAuthFetchError.rateLimited(Self.retryAfterSeconds(from: http))
             default:
                 let body = String(data: data, encoding: .utf8)
                 throw ClaudeOAuthFetchError.serverError(http.statusCode, body)
@@ -83,6 +92,16 @@ enum ClaudeOAuthUsageFetcher {
         if let date = formatter.date(from: string) { return date }
         formatter.formatOptions = [.withInternetDateTime]
         return formatter.date(from: string)
+    }
+
+    static func retryAfterSeconds(from response: HTTPURLResponse) -> Int? {
+        guard let raw = response.value(forHTTPHeaderField: "Retry-After")?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !raw.isEmpty
+        else {
+            return nil
+        }
+        return Int(raw)
     }
 }
 

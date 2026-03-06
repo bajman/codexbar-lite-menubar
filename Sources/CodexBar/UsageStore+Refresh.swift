@@ -26,6 +26,7 @@ extension UsageStore {
                 self.lastKnownSessionRemaining.removeValue(forKey: provider)
                 self.lastKnownSessionWindowSource.removeValue(forKey: provider)
                 self.lastTokenFetchAt.removeValue(forKey: provider)
+                self.resetStatusRefreshState(for: provider)
             }
             return
         }
@@ -56,6 +57,7 @@ extension UsageStore {
             return await group.next()!
         }
         if provider == .claude,
+           self.settings.claudeUsageDataSource == .oauth,
            ClaudeOAuthCredentialsStore.invalidateCacheIfCredentialsFileChanged()
         {
             await MainActor.run {
@@ -93,14 +95,18 @@ extension UsageStore {
         case let .failure(error):
             await MainActor.run {
                 let hadPriorData = self.snapshots[provider] != nil
-                let shouldSurface =
-                    self.failureGates[provider]?
-                        .shouldSurfaceError(onFailureWithPriorData: hadPriorData) ?? true
-                if shouldSurface {
+                var gate = self.failureGates[provider] ?? ConsecutiveFailureGate()
+                let resolution = ProviderRefreshFailureResolution.resolve(
+                    hadPriorData: hadPriorData,
+                    failureGate: &gate)
+                self.failureGates[provider] = gate
+                if resolution.shouldSurfaceError {
                     self.errors[provider] = error.localizedDescription
-                    self.snapshots.removeValue(forKey: provider)
                 } else {
                     self.errors[provider] = nil
+                }
+                if !resolution.keepSnapshot {
+                    self.snapshots.removeValue(forKey: provider)
                 }
             }
             if let runtime = self.providerRuntimes[provider] {

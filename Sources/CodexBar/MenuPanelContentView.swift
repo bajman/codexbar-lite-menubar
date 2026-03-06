@@ -53,9 +53,13 @@ struct MenuPanelContentView: View {
         case costHistory
     }
 
+    private var contentWidth: CGFloat {
+        MenuPanelMetrics.contentWidth(for: self.cardWidth)
+    }
+
     var body: some View {
         let enabledProviders = self.store.enabledProviders()
-        let content = VStack(spacing: 8) {
+        let content = VStack(spacing: MenuPanelMetrics.sectionSpacing) {
             if self.shouldMergeIcons, enabledProviders.count > 1 {
                 self.switcherSection(enabledProviders: enabledProviders)
             }
@@ -65,14 +69,14 @@ struct MenuPanelContentView: View {
             self.chartSection(enabledProviders: enabledProviders)
 
             Divider()
-                .padding(.horizontal, 12)
 
             self.actionSection(enabledProviders: enabledProviders)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, MenuPanelMetrics.shellHorizontalPadding)
+        .padding(.top, MenuPanelMetrics.shellTopPadding)
+        .padding(.bottom, MenuPanelMetrics.shellBottomPadding)
         .frame(width: self.cardWidth)
-        .menuGlassBackground(layer: .shell, cornerRadius: 12, skipGlassEffect: true)
+        .menuGlassBackground(layer: .shell, cornerRadius: MenuPanelMetrics.shellCornerRadius, skipGlassEffect: true)
 
         #if DEBUG
         content
@@ -142,7 +146,7 @@ struct MenuPanelContentView: View {
             let provider = self.resolvedCurrentProvider(
                 enabledProviders: enabledProviders, isOverview: false)
             if let provider, let model = self.cardModelProvider(provider) {
-                UsageMenuCardView(model: model, width: self.cardWidth - 24)
+                UsageMenuCardView(model: model, width: self.contentWidth)
             }
         }
     }
@@ -151,10 +155,10 @@ struct MenuPanelContentView: View {
     private func overviewCards(enabledProviders: [UsageProvider]) -> some View {
         let overviewProviders = self.settings.resolvedMergedOverviewProviders(
             activeProviders: enabledProviders)
-        VStack(spacing: 4) {
+        VStack(spacing: MenuPanelMetrics.sectionSpacing) {
             ForEach(overviewProviders, id: \.self) { provider in
                 if let model = self.cardModelProvider(provider) {
-                    UsageMenuCardView(model: model, width: self.cardWidth - 24)
+                    UsageMenuCardView(model: model, width: self.contentWidth)
                 }
             }
         }
@@ -173,7 +177,7 @@ struct MenuPanelContentView: View {
             let webContext = self.openAIWebContextProvider(provider, showAllAccounts)
 
             if webContext.hasUsageBreakdown || webContext.hasCreditsHistory || webContext.hasCostHistory {
-                VStack(spacing: 4) {
+                VStack(spacing: MenuPanelMetrics.sectionSpacing) {
                     if webContext.hasUsageBreakdown {
                         self.chartDisclosure(
                             title: "Usage Breakdown",
@@ -182,7 +186,7 @@ struct MenuPanelContentView: View {
                         {
                             if let breakdown = self.store.openAIDashboard?.dailyBreakdown {
                                 UsageBreakdownChartMenuView(
-                                    breakdown: breakdown, width: self.cardWidth - 24)
+                                    breakdown: breakdown, width: self.contentWidth)
                             }
                         }
                     }
@@ -194,7 +198,7 @@ struct MenuPanelContentView: View {
                         {
                             if let breakdown = self.store.openAIDashboard?.dailyBreakdown {
                                 CreditsHistoryChartMenuView(
-                                    breakdown: breakdown, width: self.cardWidth - 24)
+                                    breakdown: breakdown, width: self.contentWidth)
                             }
                         }
                     }
@@ -209,7 +213,7 @@ struct MenuPanelContentView: View {
                                     provider: provider,
                                     daily: snapshot.daily,
                                     totalCostUSD: snapshot.last30DaysCostUSD,
-                                    width: self.cardWidth - 24)
+                                    width: self.contentWidth)
                             }
                         }
                     }
@@ -226,27 +230,30 @@ struct MenuPanelContentView: View {
         @ViewBuilder content: @escaping () -> some View) -> some View
     {
         Button {
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(.snappy(duration: 0.22)) {
                 self.expandedChart = self.expandedChart == chart ? nil : chart
             }
         } label: {
-            HStack {
+            HStack(spacing: MenuPanelMetrics.inlineSpacing) {
                 Label(title, systemImage: icon)
-                    .font(.subheadline)
+                    .font(.subheadline.weight(.medium))
                 Spacer()
                 Image(systemName: "chevron.right")
                     .rotationEffect(.degrees(self.expandedChart == chart ? 90 : 0))
                     .font(.caption)
             }
             .foregroundStyle(.secondary)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 4)
+            .padding(.horizontal, MenuPanelMetrics.disclosureHorizontalPadding)
+            .padding(.vertical, MenuPanelMetrics.disclosureVerticalPadding)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
 
         if self.expandedChart == chart {
             content()
+                .menuContentSurface(
+                    cornerRadius: MenuPanelMetrics.sectionCornerRadius,
+                    prominence: .subtle)
                 .transition(.opacity.combined(with: .move(edge: .top)))
         }
     }
@@ -265,18 +272,16 @@ struct MenuPanelContentView: View {
             updateReady: self.updater.updateStatus.isUpdateReady,
             includeContextualActions: !isOverview)
 
-        VStack(spacing: 2) {
-            ForEach(Array(sections.enumerated()), id: \.offset) { sectionIndex, section in
-                ForEach(Array(section.entries.enumerated()), id: \.offset) { _, entry in
-                    self.entryView(entry)
-                }
-                if sectionIndex < sections.count - 1 {
-                    Divider()
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 2)
+        VStack(spacing: MenuPanelMetrics.sectionSpacing) {
+            ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
+                if self.isActionOnlySection(section) {
+                    self.actionSectionView(section)
+                } else {
+                    self.infoSectionView(section)
                 }
             }
         }
+        .padding(.bottom, MenuPanelMetrics.footerBottomPadding)
     }
 
     @ViewBuilder
@@ -292,6 +297,44 @@ struct MenuPanelContentView: View {
         }
     }
 
+    private func isActionOnlySection(_ section: MenuDescriptor.Section) -> Bool {
+        section.entries.allSatisfy { entry in
+            if case .action = entry { return true }
+            return false
+        }
+    }
+
+    @ViewBuilder
+    private func actionSectionView(_ section: MenuDescriptor.Section) -> some View {
+        let content = VStack(spacing: MenuPanelMetrics.compactSpacing) {
+            ForEach(Array(section.entries.enumerated()), id: \.offset) { _, entry in
+                self.entryView(entry)
+            }
+        }
+
+        if LiquidGlassAvailability.shouldApplyGlass {
+            GlassEffectContainer(spacing: MenuPanelMetrics.compactSpacing) {
+                content
+            }
+        } else {
+            content
+        }
+    }
+
+    private func infoSectionView(_ section: MenuDescriptor.Section) -> some View {
+        VStack(spacing: MenuPanelMetrics.compactSpacing) {
+            ForEach(Array(section.entries.enumerated()), id: \.offset) { _, entry in
+                self.entryView(entry)
+            }
+        }
+        .padding(.horizontal, MenuPanelMetrics.compactSurfacePadding)
+        .padding(.vertical, MenuPanelMetrics.compactSurfacePadding)
+        .menuContentSurface(
+            cornerRadius: MenuPanelMetrics.sectionCornerRadius,
+            prominence: .subtle)
+    }
+
+    @ViewBuilder
     private func textEntryView(text: String, style: MenuDescriptor.TextStyle) -> some View {
         switch style {
         case .headline:
@@ -299,19 +342,23 @@ struct MenuPanelContentView: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 4)
+                .padding(.horizontal, 8)
+                .padding(.vertical, MenuPanelMetrics.compactSpacing)
         case .primary:
             Text(text)
                 .font(.subheadline)
                 .foregroundStyle(.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 4)
+                .padding(.horizontal, 8)
+                .padding(.vertical, MenuPanelMetrics.compactSpacing)
         case .secondary:
             Text(text)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 4)
+                .padding(.horizontal, 8)
+                .padding(.vertical, MenuPanelMetrics.compactSpacing)
         }
     }
 
@@ -323,15 +370,15 @@ struct MenuPanelContentView: View {
             HStack(spacing: 8) {
                 if let icon = action.systemImageName {
                     Image(systemName: icon)
-                        .frame(width: 16)
+                        .frame(width: MenuPanelMetrics.actionIconWidth, alignment: .center)
                         .symbolRenderingMode(.hierarchical)
                 }
                 Text(title)
                 Spacer()
             }
             .font(.subheadline)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 4)
+            .padding(.horizontal, 12)
+            .padding(.vertical, MenuPanelMetrics.actionVerticalPadding)
             .contentShape(Rectangle())
         }
         .menuPanelActionButtonStyle()

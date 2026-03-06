@@ -60,11 +60,12 @@ public enum ClaudeUsageError: LocalizedError, Sendable {
 public struct ClaudeUsageFetcher: ClaudeUsageFetching, Sendable {
     private let environment: [String: String]
     private let browserDetection: BrowserDetection
+    private let dataSource: ClaudeUsageDataSource
 
     public init(
         browserDetection: BrowserDetection,
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        dataSource _: ClaudeUsageDataSource = .oauth,
+        dataSource: ClaudeUsageDataSource = .auto,
         oauthKeychainPromptCooldownEnabled _: Bool = false,
         allowBackgroundDelegatedRefresh _: Bool = false,
         allowStartupBootstrapPrompt _: Bool = false,
@@ -74,10 +75,57 @@ public struct ClaudeUsageFetcher: ClaudeUsageFetching, Sendable {
     {
         self.browserDetection = browserDetection
         self.environment = environment
+        self.dataSource = dataSource
     }
 
     public func loadLatestUsage(model _: String = "sonnet") async throws -> ClaudeUsageSnapshot {
-        let snapshot = try await ClaudeLiteFetcher(environment: self.environment).fetchUsage()
+        switch self.dataSource {
+        case .oauth:
+            let snapshot = try await ClaudeLiteFetcher(environment: self.environment).fetchUsage()
+            return try Self.mapSnapshot(snapshot)
+        case .auto, .cli, .web:
+            do {
+                let snapshot = try await ClaudeLiteFetcher(environment: self.environment).fetchUsage()
+                return try Self.mapSnapshot(snapshot)
+            } catch {
+                guard ClaudeLiteFetcher.shouldFallbackToLocalLogs(on: error) else { throw error }
+                let snapshot = try await ClaudeLocalUsageFetcher(environment: self.environment).fetchUsage()
+                return try Self.mapSnapshot(snapshot)
+            }
+        }
+    }
+
+    public func debugRawProbe(model _: String = "sonnet") async -> String {
+        switch self.dataSource {
+        case .oauth:
+            do {
+                let usage = try await self.loadLatestUsage(model: "sonnet")
+                return "source=\(ClaudeUsageSourceLabels.live) session_left=\(usage.primary.remainingPercent) "
+                    + "weekly_left=\(usage.secondary?.remainingPercent ?? -1)"
+            } catch {
+                return "Probe failed: \(error)"
+            }
+        case .auto, .cli, .web:
+            do {
+                let snapshot = try await ClaudeLiteFetcher(environment: self.environment).fetchUsage()
+                let usage = try Self.mapSnapshot(snapshot)
+                return "source=\(ClaudeUsageSourceLabels.live) session_left=\(usage.primary.remainingPercent) "
+                    + "weekly_left=\(usage.secondary?.remainingPercent ?? -1)"
+            } catch {
+                guard ClaudeLiteFetcher.shouldFallbackToLocalLogs(on: error) else {
+                    return "Probe failed: \(error)"
+                }
+                return await ClaudeLocalUsageFetcher(environment: self.environment).debugRawProbe()
+            }
+        }
+    }
+
+    public func detectVersion() -> String? {
+        _ = self.browserDetection
+        return ProviderVersionDetector.claudeVersion()
+    }
+
+    private static func mapSnapshot(_ snapshot: UsageSnapshot) throws -> ClaudeUsageSnapshot {
         guard let primary = snapshot.primary else {
             throw ClaudeUsageError.parseFailed("missing primary rate window")
         }
@@ -91,20 +139,5 @@ public struct ClaudeUsageFetcher: ClaudeUsageFetching, Sendable {
             accountOrganization: snapshot.identity?.accountOrganization,
             loginMethod: snapshot.identity?.loginMethod,
             rawText: nil)
-    }
-
-    public func debugRawProbe(model _: String = "sonnet") async -> String {
-        do {
-            let usage = try await self.loadLatestUsage(model: "sonnet")
-            return "session_left=\(usage.primary.remainingPercent) "
-                + "weekly_left=\(usage.secondary?.remainingPercent ?? -1)"
-        } catch {
-            return "Probe failed: \(error)"
-        }
-    }
-
-    public func detectVersion() -> String? {
-        _ = self.browserDetection
-        return ProviderVersionDetector.claudeVersion()
     }
 }

@@ -1,94 +1,151 @@
 import Foundation
 
-private enum ClaudeLiteFetcherError: LocalizedError {
+enum ClaudeLiteFetcherError: LocalizedError {
     case missingCredentials
-    case invalidCredentials
 
     var errorDescription: String? {
         switch self {
         case .missingCredentials:
-            "Claude credentials not found. Run `claude login`."
-        case .invalidCredentials:
-            "Claude credentials are invalid. Run `claude login`."
+            "Claude session not found. Open Terminal and run `claude` to authenticate."
         }
     }
 }
 
 struct ClaudeLiteFetcher {
     private let environment: [String: String]
+    private static let clientVersion = ProviderVersionDetector.claudeVersion()
+
+    #if DEBUG
+    typealias LoadRecordOverride = @Sendable (
+        [String: String],
+        Bool,
+        Bool) async throws -> ClaudeOAuthCredentialRecord
+    typealias FetchUsageOverride = @Sendable (String) async throws -> OAuthUsageResponse
+    typealias SyncFromClaudeKeychainOverride = @Sendable () -> Bool
+
+    @TaskLocal static var loadRecordOverride: LoadRecordOverride?
+    @TaskLocal static var fetchUsageOverride: FetchUsageOverride?
+    @TaskLocal static var syncFromClaudeKeychainOverride: SyncFromClaudeKeychainOverride?
+    #endif
 
     init(environment: [String: String] = ProcessInfo.processInfo.environment) {
         self.environment = environment
     }
 
+    static func shouldFallbackToLocalLogs(on error: Error) -> Bool {
+        if let error = error as? ClaudeLiteFetcherError {
+            switch error {
+            case .missingCredentials:
+                return true
+            }
+        }
+        if let error = error as? ClaudeOAuthCredentialsError {
+            switch error {
+            case .notFound, .noRefreshToken, .refreshDelegatedToClaudeCLI:
+                return true
+            default:
+                return false
+            }
+        }
+        return false
+    }
+
     func fetchUsage() async throws -> UsageSnapshot {
-        let credentials = try self.loadCredentials()
-        let response = try await ClaudeOAuthUsageFetcher.fetchUsage(accessToken: credentials.accessToken)
+        let record = try await self.loadCredentialRecord()
+        let (response, credentials) = try await self.fetchUsageResponse(using: record)
         return Self.mapUsage(response, credentials: credentials)
     }
 
-    private func loadCredentials() throws -> ClaudeOAuthCredentials {
-        var sawCandidatePayload = false
+    private func loadCredentialRecord() async throws -> ClaudeOAuthCredentialRecord {
+        #if DEBUG
+        if let override = Self.loadRecordOverride {
+            return try await override(self.environment, false, true)
+        }
+        #endif
 
-        // Lite policy: keychain first using prompt-free security CLI read.
-        if let fromSecurityCLI = ClaudeOAuthCredentialsStore.loadFromClaudeKeychainViaSecurityCLIIfEnabled(
-            interaction: ProviderInteractionContext.current,
-            readStrategy: .securityCLIExperimental)
-        {
-            sawCandidatePayload = true
-            if let parsed = try? ClaudeOAuthCredentials.parse(data: fromSecurityCLI),
-               !parsed.accessToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            {
-                return parsed
+        do {
+            return try ClaudeOAuthCredentialsStore.loadRecord(
+                environment: self.environment,
+                allowKeychainPrompt: false,
+                respectKeychainPromptCooldown: true)
+        } catch let error as ClaudeOAuthCredentialsError {
+            if case .notFound = error {
+                throw ClaudeLiteFetcherError.missingCredentials
             }
+            throw error
         }
-
-        // Fallback to the existing OAuth credential resolver (cache + file + prompt-gated keychain logic).
-        if let record = try? ClaudeOAuthCredentialsStore.loadRecord(
-            environment: self.environment,
-            allowKeychainPrompt: false,
-            respectKeychainPromptCooldown: true,
-            allowClaudeKeychainRepairWithoutPrompt: true)
-        {
-            let parsed = record.credentials
-            sawCandidatePayload = true
-            if !parsed.accessToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return parsed
-            }
-        }
-
-        // File fallback for CLI variants that persist credentials in ~/.claude.
-        for fileURL in Self.credentialFileCandidates(environment: self.environment) {
-            guard let fileData = try? Data(contentsOf: fileURL) else { continue }
-            sawCandidatePayload = true
-            if let parsed = try? ClaudeOAuthCredentials.parse(data: fileData),
-               !parsed.accessToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            {
-                return parsed
-            }
-        }
-
-        if sawCandidatePayload {
-            throw ClaudeLiteFetcherError.invalidCredentials
-        }
-        throw ClaudeLiteFetcherError.missingCredentials
     }
 
-    private static func credentialFileCandidates(environment: [String: String]) -> [URL] {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let basePath = environment["CLAUDE_CONFIG_DIR"]?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let root = URL(fileURLWithPath: (basePath?.isEmpty == false ? basePath! : "\(home.path)/.claude"))
-        return [
-            root.appendingPathComponent(".credentials.json"),
-            root.appendingPathComponent("credentials.json"),
-        ]
+    private func fetchUsageResponse(
+        using record: ClaudeOAuthCredentialRecord) async throws -> (OAuthUsageResponse, ClaudeOAuthCredentials)
+    {
+        let initialCredentials = record.credentials
+
+        do {
+            let response = try await Self.fetchOAuthUsage(accessToken: initialCredentials.accessToken)
+            return (response, initialCredentials)
+        } catch let error as ClaudeOAuthFetchError {
+            guard case .unauthorized = error else { throw error }
+            let recoveredCredentials = try await self.recoverUnauthorizedCredentials(from: record)
+            let response = try await Self.fetchOAuthUsage(accessToken: recoveredCredentials.accessToken)
+            return (response, recoveredCredentials)
+        }
+    }
+
+    private func recoverUnauthorizedCredentials(
+        from record: ClaudeOAuthCredentialRecord) async throws -> ClaudeOAuthCredentials
+    {
+        switch record.owner {
+        case .codexbar:
+            return try await ClaudeOAuthCredentialsStore.loadWithAutoRefresh(
+                environment: self.environment,
+                allowKeychainPrompt: false,
+                respectKeychainPromptCooldown: true)
+        case .environment:
+            throw ClaudeOAuthCredentialsError.noRefreshToken
+        case .claudeCLI:
+            let syncedWithoutPrompt = {
+                #if DEBUG
+                if let override = Self.syncFromClaudeKeychainOverride {
+                    return override()
+                }
+                #endif
+                return ClaudeOAuthCredentialsStore.syncFromClaudeKeychainWithoutPrompt()
+            }()
+            if syncedWithoutPrompt,
+               let synced = try? ClaudeOAuthCredentialsStore.loadRecord(
+                   environment: self.environment,
+                   allowKeychainPrompt: false,
+                   respectKeychainPromptCooldown: true)
+            {
+                let accessToken = synced.credentials.accessToken.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !accessToken.isEmpty {
+                    return synced.credentials
+                }
+            }
+            throw ClaudeOAuthCredentialsError.refreshDelegatedToClaudeCLI
+        }
+    }
+
+    private static func fetchOAuthUsage(accessToken: String) async throws -> OAuthUsageResponse {
+        #if DEBUG
+        if let override = fetchUsageOverride {
+            return try await override(accessToken)
+        }
+        #endif
+        return try await ClaudeCodeQuotaFetcher.fetchUsage(
+            accessToken: accessToken,
+            clientVersion: self.clientVersion)
     }
 
     private static func mapUsage(_ response: OAuthUsageResponse, credentials: ClaudeOAuthCredentials) -> UsageSnapshot {
-        let primary = Self.makeWindow(response.fiveHour)
+        let utilizationScale = Self.utilizationScale(for: response)
+        let primary = Self.makeWindow(response.fiveHour, utilizationScale: utilizationScale)
             ?? RateWindow(usedPercent: 0, windowMinutes: nil, resetsAt: nil, resetDescription: nil)
-        let secondary = Self.makeWindow(response.sevenDay)
-        let tertiary = Self.makeWindow(response.sevenDayOpus ?? response.sevenDaySonnet)
+        let secondary = Self.makeWindow(response.sevenDay, utilizationScale: utilizationScale)
+        let tertiary = Self.makeWindow(
+            response.sevenDayOpus ?? response.sevenDaySonnet,
+            utilizationScale: utilizationScale)
 
         let providerCost: ProviderCostSnapshot? = {
             guard let extra = response.extraUsage,
@@ -124,9 +181,9 @@ struct ClaudeLiteFetcher {
             identity: identity)
     }
 
-    private static func makeWindow(_ window: OAuthUsageWindow?) -> RateWindow? {
+    private static func makeWindow(_ window: OAuthUsageWindow?, utilizationScale: UtilizationScale) -> RateWindow? {
         guard let window else { return nil }
-        let usedPercent = Self.normalizeUsedPercent(window.utilization)
+        let usedPercent = Self.normalizeUsedPercent(window.utilization, utilizationScale: utilizationScale)
         let resetDate = ClaudeOAuthUsageFetcher.parseISO8601Date(window.resetsAt)
         let resetDescription = resetDate.map { UsageFormatter.resetDescription(from: $0) }
         return RateWindow(
@@ -136,10 +193,53 @@ struct ClaudeLiteFetcher {
             resetDescription: resetDescription)
     }
 
-    private static func normalizeUsedPercent(_ utilization: Double?) -> Double {
+    private enum UtilizationScale {
+        case ratio
+        case percent
+    }
+
+    private static func utilizationScale(for response: OAuthUsageResponse) -> UtilizationScale {
+        let candidates: [Double?] = [
+            response.fiveHour?.utilization,
+            response.sevenDay?.utilization,
+            response.sevenDayOAuthApps?.utilization,
+            response.sevenDayOpus?.utilization,
+            response.sevenDaySonnet?.utilization,
+            response.iguanaNecktie?.utilization,
+        ]
+        let values = candidates.compactMap(\.self)
+        return Self.detectUtilizationScale(values)
+    }
+
+    private static func detectUtilizationScale(_ values: [Double]) -> UtilizationScale {
+        guard !values.isEmpty else { return .percent }
+
+        if values.contains(where: { $0 > 1 }) { return .percent }
+
+        let hasFractionalSubunit = values.contains { value in
+            guard value > 0, value < 1 else { return false }
+            return abs(value.rounded() - value) > 0.0001
+        }
+        if hasFractionalSubunit { return .ratio }
+
+        if values.contains(where: { $0 > 0 && $0 < 0.01 }) { return .ratio }
+
+        return .percent
+    }
+
+    private static func normalizeUsedPercent(_ utilization: Double?, utilizationScale: UtilizationScale) -> Double {
         guard let utilization else { return 0 }
         // Anthropic has returned both ratio (0...1) and percent (0...100) formats.
-        let value = utilization <= 1 ? utilization * 100 : utilization
+        let value = utilizationScale == .ratio ? utilization * 100 : utilization
         return max(0, min(100, value))
     }
+
+    #if DEBUG
+    static func _mapUsageForTesting(
+        _ response: OAuthUsageResponse,
+        credentials: ClaudeOAuthCredentials) -> UsageSnapshot
+    {
+        self.mapUsage(response, credentials: credentials)
+    }
+    #endif
 }

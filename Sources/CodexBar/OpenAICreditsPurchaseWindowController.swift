@@ -393,6 +393,9 @@ final class OpenAICreditsPurchaseWindowController: NSWindowController, WKNavigat
         self.load(url: purchaseURL)
         self.window?.center()
         self.showWindow(nil)
+        if let window = self.window {
+            NativeWindowChromeNormalizer.apply(to: window, style: .standardDocument)
+        }
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -417,7 +420,7 @@ final class OpenAICreditsPurchaseWindowController: NSWindowController, WKNavigat
 
         let window = NSWindow(
             contentRect: Self.defaultFrame(),
-            styleMask: [.titled, .closable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false)
         window.title = "Buy Credits"
@@ -426,6 +429,7 @@ final class OpenAICreditsPurchaseWindowController: NSWindowController, WKNavigat
         window.contentView = container
         window.center()
         window.delegate = self
+        NativeWindowChromeNormalizer.apply(to: window, style: .standardDocument)
 
         self.window = window
         self.webView = webView
@@ -516,6 +520,21 @@ private final class WeakScriptMessageHandler: NSObject, WKScriptMessageHandler {
 // MARK: - NSWindowDelegate
 
 extension OpenAICreditsPurchaseWindowController: NSWindowDelegate {
+    func windowDidBecomeKey(_ notification: Notification) {
+        guard let window = self.window else { return }
+        NativeWindowChromeNormalizer.apply(to: window, style: .standardDocument)
+    }
+
+    func windowDidEndLiveResize(_ notification: Notification) {
+        guard let window = self.window else { return }
+        NativeWindowChromeNormalizer.apply(to: window, style: .standardDocument)
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        guard let window = self.window else { return }
+        NativeWindowChromeNormalizer.apply(to: window, style: .standardDocument)
+    }
+
     func windowWillClose(_ notification: Notification) {
         guard let window = self.window else { return }
         let webView = self.webView

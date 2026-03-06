@@ -4,8 +4,8 @@ import Testing
 @Suite
 struct LitePolicyTests {
     @Test
-    func onlyOAuthKindIsAllowed() {
-        #expect(LitePolicy.allowedKinds == [.oauth])
+    func liteAllowsOAuthAndLocalProbeKinds() {
+        #expect(LitePolicy.allowedKinds == [.oauth, .localProbe])
         #expect(!LitePolicy.allowedKinds.contains(.cli))
         #expect(!LitePolicy.allowedKinds.contains(.web))
         #expect(!LitePolicy.allowedKinds.contains(.webDashboard))
@@ -26,7 +26,7 @@ struct LitePolicyTests {
     }
 
     @Test
-    func strategyResolutionForcesOAuthOnly() {
+    func strategyResolutionUsesLocalForClaudeAutoAndOAuthWhenExplicit() {
         let codexFromCLI = CodexProviderDescriptor.resolveUsageStrategy(selectedDataSource: .cli, hasOAuthCredentials: true)
         let codexFromAuto = CodexProviderDescriptor.resolveUsageStrategy(selectedDataSource: .auto, hasOAuthCredentials: false)
         #expect(codexFromCLI.dataSource == .oauth)
@@ -44,8 +44,15 @@ struct LitePolicyTests {
             hasWebSession: false,
             hasCLI: true,
             hasOAuthCredentials: true)
-        #expect(claudeFromWeb.dataSource == .oauth)
+        let claudeFromOAuth = ClaudeProviderDescriptor.resolveUsageStrategy(
+            selectedDataSource: .oauth,
+            webExtrasEnabled: false,
+            hasWebSession: false,
+            hasCLI: true,
+            hasOAuthCredentials: true)
+        #expect(claudeFromWeb.dataSource == .auto)
         #expect(!claudeFromWeb.useWebExtras)
-        #expect(claudeFromCLI.dataSource == .oauth)
+        #expect(claudeFromCLI.dataSource == .auto)
+        #expect(claudeFromOAuth.dataSource == .oauth)
     }
 }

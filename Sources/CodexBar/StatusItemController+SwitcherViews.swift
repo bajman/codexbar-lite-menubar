@@ -42,7 +42,7 @@ struct GlassProviderSwitcherView: View {
 
     var body: some View {
         let allSegments = self.segments
-        VStack(spacing: 4) {
+        VStack(spacing: MenuPanelMetrics.sectionSpacing) {
             Picker("Provider", selection: Binding(
                 get: { self.selected ?? allSegments.first?.selection ?? .provider(.codex) },
                 set: { self.onSelect($0) }))
@@ -76,6 +76,11 @@ struct GlassProviderSwitcherView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                .padding(.horizontal, MenuPanelMetrics.compactSurfacePadding)
+                .padding(.vertical, MenuPanelMetrics.compactSpacing)
+                .menuContentSurface(
+                    cornerRadius: MenuPanelMetrics.sectionCornerRadius,
+                    prominence: .subtle)
             }
         }
     }
@@ -110,21 +115,21 @@ struct GlassTokenAccountSwitcherView: View {
     var body: some View {
         if self.useGrid {
             let columns = Array(
-                repeating: GridItem(.flexible(), spacing: 4),
-                count: Int(ceil(Double(accounts.count) / 2.0)))
-            LazyVGrid(columns: columns, spacing: 4) {
+                repeating: GridItem(.flexible(), spacing: MenuPanelMetrics.compactSpacing),
+                count: Int(ceil(Double(self.accounts.count) / 2.0)))
+            LazyVGrid(columns: columns, spacing: MenuPanelMetrics.compactSpacing) {
                 ForEach(Array(self.accounts.enumerated()), id: \.offset) { index, account in
                     self.accountButton(index: index, account: account)
                 }
             }
-            .padding(.horizontal, 6)
+            .padding(.horizontal, MenuPanelMetrics.compactSurfacePadding)
         } else {
-            HStack(spacing: 4) {
+            HStack(spacing: MenuPanelMetrics.compactSpacing) {
                 ForEach(Array(self.accounts.enumerated()), id: \.offset) { index, account in
                     self.accountButton(index: index, account: account)
                 }
             }
-            .padding(.horizontal, 6)
+            .padding(.horizontal, MenuPanelMetrics.compactSurfacePadding)
         }
     }
 
@@ -138,8 +143,8 @@ struct GlassTokenAccountSwitcherView: View {
             Text(account.displayName)
                 .font(.system(size: NSFont.smallSystemFontSize))
                 .lineLimit(1)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 4)
+                .padding(.horizontal, MenuPanelMetrics.chipHorizontalPadding)
+                .padding(.vertical, MenuPanelMetrics.chipVerticalPadding)
         }
         .glassSegmentStyle(isSelected: isSelected, isHovered: isHovered)
         .onHover { hovering in

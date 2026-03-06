@@ -10,7 +10,6 @@ extension UsageStore {
     var menuObservationToken: Int {
         _ = self.snapshots
         _ = self.errors
-        _ = self.lastSourceLabels
         _ = self.lastFetchAttempts
         _ = self.accountSnapshots
         _ = self.tokenSnapshots
@@ -21,41 +20,28 @@ extension UsageStore {
         _ = self.openAIDashboard
         _ = self.lastOpenAIDashboardError
         _ = self.openAIDashboardRequiresLogin
-        _ = self.openAIDashboardCookieImportStatus
-        _ = self.openAIDashboardCookieImportDebugLog
-        _ = self.versions
         _ = self.isRefreshing
         _ = self.refreshingProviders
-        _ = self.pathDebugInfo
         _ = self.statuses
-        _ = self.probeLogs
         return 0
     }
 
     func observeSettingsChanges() {
         withObservationTracking {
-            _ = self.settings.refreshFrequency
-            _ = self.settings.statusChecksEnabled
-            _ = self.settings.sessionQuotaNotificationsEnabled
-            _ = self.settings.usageBarsShowUsed
-            _ = self.settings.costUsageEnabled
-            _ = self.settings.randomBlinkEnabled
-            _ = self.settings.configRevision
+            _ = self.settings.dataRefreshObservationToken
             for implementation in ProviderCatalog.all {
                 implementation.observeSettings(self.settings)
             }
-            _ = self.settings.showAllTokenAccountsInMenu
-            _ = self.settings.tokenAccountsByProvider
-            _ = self.settings.mergeIcons
-            _ = self.settings.selectedMenuProvider
-            _ = self.settings.debugLoadingPattern
-            _ = self.settings.debugKeepCLISessionsAlive
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.observeSettingsChanges()
                 self.startTimer()
                 self.updateProviderRuntimes()
+                if !self.settings.statusChecksEnabled {
+                    self.statuses.removeAll()
+                    self.resetStatusRefreshState()
+                }
                 await self.refresh()
             }
         }
@@ -135,6 +121,60 @@ struct ConsecutiveFailureGate {
     }
 }
 
+struct RefreshRequestOptions: Equatable {
+    var forceTokenUsage: Bool = false
+    var forceStatusChecks: Bool = false
+
+    mutating func merge(_ other: Self) {
+        self.forceTokenUsage = self.forceTokenUsage || other.forceTokenUsage
+        self.forceStatusChecks = self.forceStatusChecks || other.forceStatusChecks
+    }
+}
+
+struct StatusRefreshState: Equatable {
+    private(set) var lastSuccessAt: Date?
+    private(set) var backoffUntil: Date?
+    private(set) var failureStreak: Int = 0
+
+    func shouldRefresh(now: Date, ttl: TimeInterval, force: Bool) -> Bool {
+        if force { return true }
+        if let backoffUntil, now < backoffUntil { return false }
+        guard let lastSuccessAt else { return true }
+        return now.timeIntervalSince(lastSuccessAt) >= ttl
+    }
+
+    mutating func recordSuccess(now: Date) {
+        self.lastSuccessAt = now
+        self.backoffUntil = nil
+        self.failureStreak = 0
+    }
+
+    mutating func recordFailure(now: Date, baseBackoff: TimeInterval, maxBackoff: TimeInterval) {
+        self.failureStreak += 1
+        let exponent = Double(max(0, self.failureStreak - 1))
+        let delay = min(maxBackoff, baseBackoff * pow(2, exponent))
+        self.backoffUntil = now.addingTimeInterval(delay)
+    }
+
+    mutating func reset() {
+        self.lastSuccessAt = nil
+        self.backoffUntil = nil
+        self.failureStreak = 0
+    }
+}
+
+struct ProviderRefreshFailureResolution: Equatable {
+    let keepSnapshot: Bool
+    let shouldSurfaceError: Bool
+
+    static func resolve(hadPriorData: Bool, failureGate: inout ConsecutiveFailureGate) -> Self {
+        let shouldSurfaceError = failureGate.shouldSurfaceError(onFailureWithPriorData: hadPriorData)
+        return Self(
+            keepSnapshot: hadPriorData,
+            shouldSurfaceError: shouldSurfaceError)
+    }
+}
+
 @MainActor
 @Observable
 final class UsageStore {
@@ -193,9 +233,14 @@ final class UsageStore {
     @ObservationIgnored var lastKnownSessionRemaining: [UsageProvider: Double] = [:]
     @ObservationIgnored var lastKnownSessionWindowSource: [UsageProvider: SessionQuotaWindowSource] = [:]
     @ObservationIgnored var lastTokenFetchAt: [UsageProvider: Date] = [:]
+    @ObservationIgnored private var statusRefreshStates: [UsageProvider: StatusRefreshState] = [:]
+    @ObservationIgnored private var pendingRefreshRequest: RefreshRequestOptions?
     @ObservationIgnored private var hasCompletedInitialRefresh: Bool = false
     @ObservationIgnored private let tokenFetchTTL: TimeInterval = 60 * 60
     @ObservationIgnored private let tokenFetchTimeout: TimeInterval = 10 * 60
+    @ObservationIgnored private let statusFetchTTL: TimeInterval = 10 * 60
+    @ObservationIgnored private let statusFetchBaseBackoff: TimeInterval = 60
+    @ObservationIgnored private let statusFetchMaxBackoff: TimeInterval = 30 * 60
 
     init(
         fetcher: UsageFetcher,
@@ -221,6 +266,9 @@ final class UsageStore {
         self.tokenFailureGates = Dictionary(
             uniqueKeysWithValues: UsageProvider.allCases
                 .map { ($0, ConsecutiveFailureGate()) })
+        self.statusRefreshStates = Dictionary(
+            uniqueKeysWithValues: UsageProvider.allCases
+                .map { ($0, StatusRefreshState()) })
         self.providerSpecs = registry.specs(
             settings: settings,
             metadata: self.providerMetadata,
@@ -408,9 +456,28 @@ final class UsageStore {
         }
     }
 
-    func refresh(forceTokenUsage: Bool = false) async {
-        guard !self.isRefreshing else { return }
+    func refresh(forceTokenUsage: Bool = false, forceStatusChecks: Bool = false) async {
+        let requested = RefreshRequestOptions(
+            forceTokenUsage: forceTokenUsage,
+            forceStatusChecks: forceStatusChecks)
+        if self.isRefreshing {
+            self.enqueueRefresh(requested)
+            return
+        }
+
+        var nextRequest: RefreshRequestOptions? = requested
+        while let request = nextRequest {
+            self.pendingRefreshRequest = nil
+            await self.performRefresh(request)
+            nextRequest = self.pendingRefreshRequest
+        }
+    }
+
+    private func performRefresh(_ request: RefreshRequestOptions) async {
         let refreshPhase: ProviderRefreshPhase = self.hasCompletedInitialRefresh ? .regular : .startup
+        let enabledProviders = Set(self.enabledProviders())
+        let statusChecksEnabled = self.settings.statusChecksEnabled
+        let now = Date()
 
         await ProviderRefreshContext.$current.withValue(refreshPhase) {
             self.isRefreshing = true
@@ -419,25 +486,47 @@ final class UsageStore {
                 self.hasCompletedInitialRefresh = true
             }
 
+            if !statusChecksEnabled {
+                self.statuses.removeAll()
+                self.resetStatusRefreshState()
+            }
+
             await withTaskGroup(of: Void.self) { group in
                 for provider in UsageProvider.allCases {
                     group.addTask { await self.refreshProvider(provider) }
-                    group.addTask { await self.refreshStatus(provider) }
+                    if statusChecksEnabled,
+                       enabledProviders.contains(provider),
+                       self.shouldRefreshStatus(provider, now: now, force: request.forceStatusChecks)
+                    {
+                        group.addTask { await self.refreshStatus(provider, now: now) }
+                    } else if !enabledProviders.contains(provider) {
+                        self.statuses.removeValue(forKey: provider)
+                        self.resetStatusRefreshState(for: provider)
+                    }
                 }
                 group.addTask { await self.refreshCreditsIfNeeded() }
             }
 
             // Token-cost usage can be slow; run it outside the refresh group so we don't block menu updates.
-            self.scheduleTokenRefresh(force: forceTokenUsage)
+            self.scheduleTokenRefresh(force: request.forceTokenUsage)
 
             // OpenAI web scrape depends on the current Codex account email (which can change after login/account
             // switch). Run this after Codex usage refresh so we don't accidentally scrape with stale credentials.
-            await self.refreshOpenAIDashboardIfNeeded(force: forceTokenUsage)
+            await self.refreshOpenAIDashboardIfNeeded(force: request.forceTokenUsage)
 
             if self.openAIDashboardRequiresLogin {
                 await self.refreshProvider(.codex)
                 await self.refreshCreditsIfNeeded()
             }
+        }
+    }
+
+    private func enqueueRefresh(_ request: RefreshRequestOptions) {
+        if var pendingRefreshRequest = self.pendingRefreshRequest {
+            pendingRefreshRequest.merge(request)
+            self.pendingRefreshRequest = pendingRefreshRequest
+        } else {
+            self.pendingRefreshRequest = request
         }
     }
 
@@ -608,8 +697,29 @@ final class UsageStore {
         self.sessionQuotaNotifier.post(transition: transition, provider: provider, badge: nil)
     }
 
-    private func refreshStatus(_ provider: UsageProvider) async {
+    private func shouldRefreshStatus(_ provider: UsageProvider, now: Date, force: Bool) -> Bool {
+        if force { return true }
+        return self.statusRefreshStates[provider, default: StatusRefreshState()]
+            .shouldRefresh(now: now, ttl: self.statusFetchTTL, force: false)
+    }
+
+    func resetStatusRefreshState(for provider: UsageProvider? = nil) {
+        if let provider {
+            self.statusRefreshStates[provider]?.reset()
+            return
+        }
+        for key in Array(self.statusRefreshStates.keys) {
+            self.statusRefreshStates[key]?.reset()
+        }
+    }
+
+    private func refreshStatus(_ provider: UsageProvider, now: Date = Date()) async {
         guard self.settings.statusChecksEnabled else { return }
+        guard self.isEnabled(provider) else {
+            self.statuses.removeValue(forKey: provider)
+            self.resetStatusRefreshState(for: provider)
+            return
+        }
         guard let meta = self.providerMetadata[provider] else { return }
 
         do {
@@ -621,10 +731,17 @@ final class UsageStore {
             } else {
                 return
             }
-            await MainActor.run { self.statuses[provider] = status }
+            await MainActor.run {
+                self.statuses[provider] = status
+                self.statusRefreshStates[provider, default: StatusRefreshState()].recordSuccess(now: now)
+            }
         } catch {
             // Keep the previous status to avoid flapping when the API hiccups.
             await MainActor.run {
+                self.statusRefreshStates[provider, default: StatusRefreshState()].recordFailure(
+                    now: now,
+                    baseBackoff: self.statusFetchBaseBackoff,
+                    maxBackoff: self.statusFetchMaxBackoff)
                 if self.statuses[provider] == nil {
                     self.statuses[provider] = ProviderStatus(
                         indicator: .unknown,
@@ -720,6 +837,7 @@ extension UsageStore {
     func debugDumpClaude() async {
         let fetcher = ClaudeUsageFetcher(
             browserDetection: self.browserDetection,
+            dataSource: self.settings.claudeUsageDataSource,
             keepCLISessionsAlive: self.settings.debugKeepCLISessionsAlive)
         let output = await fetcher.debugRawProbe(model: "sonnet")
         let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("codexbar-claude-probe.txt")
@@ -912,8 +1030,8 @@ extension UsageStore {
                 hasOAuthCredentials: hasOAuthCredentials)
 
             if claudeUsageDataSource == .auto {
-                lines.append("pipeline_order=oauth→cli→web")
-                lines.append("auto_heuristic=\(strategy.dataSource.rawValue)")
+                lines.append("pipeline_order=claude-code→local")
+                lines.append("auto_heuristic=live_with_auth_fallback")
             } else {
                 lines.append("strategy=\(strategy.dataSource.rawValue)")
             }
@@ -935,52 +1053,35 @@ extension UsageStore {
 
             switch strategy.dataSource {
             case .auto:
-                lines.append("Auto source selected.")
+                let fetcher = ClaudeUsageFetcher(
+                    browserDetection: self.browserDetection,
+                    dataSource: .auto,
+                    keepCLISessionsAlive: keepCLISessionsAlive)
+                await lines.append(fetcher.debugRawProbe(model: "sonnet"))
                 return lines.joined(separator: "\n")
             case .web:
-                do {
-                    let web = try await ClaudeWebAPIFetcher
-                        .fetchUsage(browserDetection: self.browserDetection) { msg in lines.append(msg) }
-                    lines.append("")
-                    lines.append("Web API summary:")
-
-                    let sessionReset = web.sessionResetsAt?.description ?? "nil"
-                    lines.append("session_used=\(web.sessionPercentUsed)% resetsAt=\(sessionReset)")
-
-                    if let weekly = web.weeklyPercentUsed {
-                        let weeklyReset = web.weeklyResetsAt?.description ?? "nil"
-                        lines.append("weekly_used=\(weekly)% resetsAt=\(weeklyReset)")
-                    } else {
-                        lines.append("weekly_used=nil")
-                    }
-
-                    lines.append("opus_used=\(web.opusPercentUsed?.description ?? "nil")")
-
-                    if let extra = web.extraUsageCost {
-                        let resetsAt = extra.resetsAt?.description ?? "nil"
-                        let period = extra.period ?? "nil"
-                        let line =
-                            "extra_usage used=\(extra.used) limit=\(extra.limit) " +
-                            "currency=\(extra.currencyCode) period=\(period) resetsAt=\(resetsAt)"
-                        lines.append(line)
-                    } else {
-                        lines.append("extra_usage=nil")
-                    }
-
-                    return lines.joined(separator: "\n")
-                } catch {
-                    lines.append("Web API failed: \(error.localizedDescription)")
-                    return lines.joined(separator: "\n")
-                }
+                lines.append("Web source is disabled in Lite; using automatic Claude Code probing.")
+                let fetcher = ClaudeUsageFetcher(
+                    browserDetection: self.browserDetection,
+                    dataSource: .auto,
+                    keepCLISessionsAlive: keepCLISessionsAlive)
+                await lines.append(fetcher.debugRawProbe(model: "sonnet"))
+                return lines.joined(separator: "\n")
             case .cli:
                 let fetcher = ClaudeUsageFetcher(
                     browserDetection: self.browserDetection,
+                    dataSource: .auto,
                     keepCLISessionsAlive: keepCLISessionsAlive)
                 let cli = await fetcher.debugRawProbe(model: "sonnet")
                 lines.append(cli)
                 return lines.joined(separator: "\n")
             case .oauth:
-                lines.append("OAuth source selected.")
+                lines.append("Claude Code live source selected.")
+                let fetcher = ClaudeUsageFetcher(
+                    browserDetection: self.browserDetection,
+                    dataSource: .oauth,
+                    keepCLISessionsAlive: keepCLISessionsAlive)
+                await lines.append(fetcher.debugRawProbe(model: "sonnet"))
                 return lines.joined(separator: "\n")
             }
         }
@@ -1200,7 +1301,6 @@ extension UsageStore {
         {
             return
         }
-        self.lastTokenFetchAt[provider] = now
         self.tokenRefreshInFlight.insert(provider)
         defer { self.tokenRefreshInFlight.remove(provider) }
 
@@ -1230,6 +1330,7 @@ extension UsageStore {
             }
 
             guard !snapshot.daily.isEmpty else {
+                self.lastTokenFetchAt[provider] = Date()
                 self.tokenSnapshots.removeValue(forKey: provider)
                 self.tokenErrors[provider] = Self.tokenCostNoDataMessage(for: provider)
                 self.tokenFailureGates[provider]?.recordSuccess()
@@ -1245,6 +1346,7 @@ extension UsageStore {
                 "today=\(sessionCost) " +
                 "30d=\(monthCost)"
             self.tokenCostLogger.info(message)
+            self.lastTokenFetchAt[provider] = Date()
             self.tokenSnapshots[provider] = snapshot
             self.tokenErrors[provider] = nil
             self.tokenFailureGates[provider]?.recordSuccess()

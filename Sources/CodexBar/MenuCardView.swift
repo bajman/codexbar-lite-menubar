@@ -50,6 +50,12 @@ struct UsageMenuCardView: View {
         struct TokenUsageSection: Sendable {
             let sessionLine: String
             let monthLine: String
+            let sessionLabel: String // e.g. "Today:"
+            let sessionCost: String // e.g. "$1.23"
+            let sessionTokensLabel: String? // e.g. "4.5M tokens"
+            let monthLabel: String // e.g. "Last 30 days:"
+            let monthCost: String // e.g. "$12.34"
+            let monthTokensLabel: String? // e.g. "45M tokens"
             let hintLine: String?
             let errorLine: String?
             let errorCopyText: String?
@@ -91,7 +97,7 @@ struct UsageMenuCardView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             UsageMenuCardHeaderView(model: self.model)
 
             if self.hasDetails {
@@ -112,9 +118,9 @@ struct UsageMenuCardView: View {
                 let hasProviderCost = self.model.providerCost != nil
                 let hasCost = self.model.tokenUsage != nil || hasProviderCost
 
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: MenuPanelMetrics.sectionSpacing) {
                     if hasUsage {
-                        VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: MenuPanelMetrics.sectionSpacing) {
                             ForEach(self.model.metrics, id: \.id) { metric in
                                 MetricRow(
                                     metric: metric,
@@ -149,44 +155,16 @@ struct UsageMenuCardView: View {
                         Divider()
                     }
                     if let tokenUsage = self.model.tokenUsage {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Cost")
-                                .font(.body)
-                                .fontWeight(.medium)
-                            Text(tokenUsage.sessionLine)
-                                .font(.footnote)
-                                .fontDesign(MenuHighlightStyle.glassFontDesign)
-                            Text(tokenUsage.monthLine)
-                                .font(.footnote)
-                                .fontDesign(MenuHighlightStyle.glassFontDesign)
-                            if let hint = tokenUsage.hintLine, !hint.isEmpty {
-                                Text(hint)
-                                    .font(.footnote)
-                                    .foregroundStyle(MenuHighlightStyle.secondary(self.isHighlighted))
-                                    .lineLimit(4)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            if let error = tokenUsage.errorLine, !error.isEmpty {
-                                Text(error)
-                                    .font(.footnote)
-                                    .foregroundStyle(MenuHighlightStyle.error(self.isHighlighted))
-                                    .lineLimit(4)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .overlay {
-                                        ClickToCopyOverlay(copyText: tokenUsage.errorCopyText ?? error)
-                                    }
-                            }
-                        }
+                        TokenUsageCostGrid(tokenUsage: tokenUsage, font: .footnote, isHighlighted: self.isHighlighted)
                     }
                 }
-                .padding(.bottom, self.model.creditsText == nil ? 6 : 0)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 2)
-        .padding(.bottom, 2)
+        .padding(.horizontal, MenuPanelMetrics.contentHorizontalPadding)
+        .padding(.top, MenuPanelMetrics.cardTopPadding)
+        .padding(.bottom, MenuPanelMetrics.cardBottomPadding)
         .frame(width: self.width, alignment: .leading)
-        .menuGlassBackground(layer: .card, cornerRadius: 12)
+        .menuContentSurface(cornerRadius: MenuPanelMetrics.cardCornerRadius)
     }
 
     private var hasDetails: Bool {
@@ -201,36 +179,53 @@ private struct UsageMenuCardHeaderView: View {
     @Environment(\.menuItemHighlighted) private var isHighlighted
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(alignment: .firstTextBaseline) {
+        HStack(alignment: .top, spacing: MenuPanelMetrics.inlineSpacing) {
+            VStack(alignment: .leading, spacing: MenuPanelMetrics.headerSpacing) {
                 Text(self.model.providerName)
                     .font(.headline)
                     .fontWeight(.semibold)
-                Spacer()
-                Text(self.model.email)
-                    .font(.subheadline)
-                    .foregroundStyle(MenuHighlightStyle.secondary(self.isHighlighted))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .layoutPriority(2)
+
+                if !self.model.subtitleText.isEmpty {
+                    HStack(
+                        alignment: self.model.subtitleStyle == .error ? .top : .firstTextBaseline,
+                        spacing: MenuPanelMetrics.compactSpacing)
+                    {
+                        Text(self.model.subtitleText)
+                            .font(.footnote)
+                            .foregroundStyle(self.subtitleColor)
+                            .lineLimit(self.model.subtitleStyle == .error ? 4 : 1)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .layoutPriority(1)
+                        if self.model.subtitleStyle == .error {
+                            CopyIconButton(copyText: self.model.subtitleText, isHighlighted: self.isHighlighted)
+                        }
+                    }
+                }
             }
-            let subtitleAlignment: VerticalAlignment = self.model.subtitleStyle == .error ? .top : .firstTextBaseline
-            HStack(alignment: subtitleAlignment) {
-                Text(self.model.subtitleText)
-                    .font(.footnote)
-                    .foregroundStyle(self.subtitleColor)
-                    .lineLimit(self.model.subtitleStyle == .error ? 4 : 1)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .layoutPriority(1)
-                    .padding(.bottom, self.model.subtitleStyle == .error ? 4 : 0)
-                Spacer()
-                if self.model.subtitleStyle == .error, !self.model.subtitleText.isEmpty {
-                    CopyIconButton(copyText: self.model.subtitleText, isHighlighted: self.isHighlighted)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if !self.model.email.isEmpty || self.model.planText != nil {
+                VStack(alignment: .trailing, spacing: MenuPanelMetrics.compactSpacing) {
+                    if !self.model.email.isEmpty {
+                        Text(self.model.email)
+                            .font(.footnote)
+                            .foregroundStyle(MenuHighlightStyle.secondary(self.isHighlighted))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.78)
+                    }
+                    if let plan = self.model.planText {
+                        Text(plan)
+                            .font(.footnote)
+                            .foregroundStyle(MenuHighlightStyle.secondary(self.isHighlighted))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.82)
+                    }
                 }
-                if let plan = self.model.planText {
-                    Text(plan)
-                        .font(.footnote)
-                        .foregroundStyle(MenuHighlightStyle.secondary(self.isHighlighted))
-                        .lineLimit(1)
-                }
+                .frame(maxWidth: 120, alignment: .trailing)
             }
         }
     }
@@ -296,13 +291,82 @@ private struct CopyIconButton: View {
     }
 }
 
+private struct TokenUsageCostGrid: View {
+    let tokenUsage: UsageMenuCardView.Model.TokenUsageSection
+    let font: Font
+    let isHighlighted: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: MenuPanelMetrics.metricRowSpacing) {
+            Text("Cost")
+                .font(.body)
+                .fontWeight(.medium)
+            Grid(
+                alignment: .leading,
+                horizontalSpacing: MenuPanelMetrics.compactSpacing,
+                verticalSpacing: MenuPanelMetrics.compactSpacing)
+            {
+                GridRow {
+                    Text(self.tokenUsage.sessionLabel)
+                        .font(self.font)
+                        .fontDesign(MenuHighlightStyle.glassFontDesign)
+                    Text(self.tokenUsage.sessionCost)
+                        .font(self.font)
+                        .monospacedDigit()
+                        .fontDesign(MenuHighlightStyle.glassFontDesign)
+                    if let tokens = self.tokenUsage.sessionTokensLabel {
+                        Text("· \(tokens)")
+                            .font(self.font)
+                            .monospacedDigit()
+                            .fontDesign(MenuHighlightStyle.glassFontDesign)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                GridRow {
+                    Text(self.tokenUsage.monthLabel)
+                        .font(self.font)
+                        .fontDesign(MenuHighlightStyle.glassFontDesign)
+                    Text(self.tokenUsage.monthCost)
+                        .font(self.font)
+                        .monospacedDigit()
+                        .fontDesign(MenuHighlightStyle.glassFontDesign)
+                    if let tokens = self.tokenUsage.monthTokensLabel {
+                        Text("· \(tokens)")
+                            .font(self.font)
+                            .monospacedDigit()
+                            .fontDesign(MenuHighlightStyle.glassFontDesign)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            if let hint = self.tokenUsage.hintLine, !hint.isEmpty {
+                Text(hint)
+                    .font(.footnote)
+                    .foregroundStyle(MenuHighlightStyle.secondary(self.isHighlighted))
+                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let error = self.tokenUsage.errorLine, !error.isEmpty {
+                Text(error)
+                    .font(.footnote)
+                    .foregroundStyle(MenuHighlightStyle.error(self.isHighlighted))
+                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .overlay {
+                        ClickToCopyOverlay(copyText: self.tokenUsage.errorCopyText ?? error)
+                    }
+            }
+        }
+    }
+}
+
 private struct ProviderCostContent: View {
     let section: UsageMenuCardView.Model.ProviderCostSection
     let progressColor: Color
     @Environment(\.menuItemHighlighted) private var isHighlighted
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: MenuPanelMetrics.metricRowSpacing) {
             HStack(alignment: .firstTextBaseline) {
                 Text(self.section.title)
                     .font(.body)
@@ -330,7 +394,7 @@ private struct MetricRow: View {
     @Environment(\.menuItemHighlighted) private var isHighlighted
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: MenuPanelMetrics.metricRowSpacing) {
             HStack(alignment: .firstTextBaseline) {
                 Text(self.title)
                     .font(.body)
@@ -404,16 +468,16 @@ struct UsageMenuCardHeaderSectionView: View {
     let width: CGFloat
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: MenuPanelMetrics.metricRowSpacing) {
             UsageMenuCardHeaderView(model: self.model)
 
             if self.showDivider {
                 Divider()
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 2)
-        .padding(.bottom, self.model.subtitleStyle == .error ? 2 : 0)
+        .padding(.horizontal, MenuPanelMetrics.contentHorizontalPadding)
+        .padding(.top, MenuPanelMetrics.sectionSpacing)
+        .padding(.bottom, self.model.subtitleStyle == .error ? MenuPanelMetrics.sectionSpacing : 0)
         .frame(width: self.width, alignment: .leading)
     }
 }
@@ -426,7 +490,7 @@ struct UsageMenuCardUsageSectionView: View {
     @Environment(\.menuItemHighlighted) private var isHighlighted
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: MenuPanelMetrics.sectionSpacing) {
             if self.model.metrics.isEmpty {
                 if !self.model.usageNotes.isEmpty {
                     UsageNotesContent(notes: self.model.usageNotes)
@@ -450,8 +514,8 @@ struct UsageMenuCardUsageSectionView: View {
                 Divider()
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 10)
+        .padding(.horizontal, MenuPanelMetrics.contentHorizontalPadding)
+        .padding(.top, MenuPanelMetrics.sectionSpacing)
         .padding(.bottom, self.bottomPadding)
         .frame(width: self.width, alignment: .leading)
     }
@@ -466,7 +530,7 @@ struct UsageMenuCardCreditsSectionView: View {
 
     var body: some View {
         if let credits = self.model.creditsText {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: MenuPanelMetrics.metricRowSpacing) {
                 CreditsBarContent(
                     creditsText: credits,
                     creditsRemaining: self.model.creditsRemaining,
@@ -477,7 +541,7 @@ struct UsageMenuCardCreditsSectionView: View {
                     Divider()
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, MenuPanelMetrics.contentHorizontalPadding)
             .padding(.top, self.topPadding)
             .padding(.bottom, self.bottomPadding)
             .frame(width: self.width, alignment: .leading)
@@ -507,7 +571,7 @@ private struct CreditsBarContent: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: MenuPanelMetrics.metricRowSpacing) {
             Text("Credits")
                 .font(.body)
                 .fontWeight(.medium)
@@ -555,39 +619,12 @@ struct UsageMenuCardCostSectionView: View {
         let hasTokenCost = self.model.tokenUsage != nil
         return Group {
             if hasTokenCost {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: MenuPanelMetrics.sectionSpacing) {
                     if let tokenUsage = self.model.tokenUsage {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Cost")
-                                .font(.body)
-                                .fontWeight(.medium)
-                            Text(tokenUsage.sessionLine)
-                                .font(.caption)
-                                .fontDesign(MenuHighlightStyle.glassFontDesign)
-                            Text(tokenUsage.monthLine)
-                                .font(.caption)
-                                .fontDesign(MenuHighlightStyle.glassFontDesign)
-                            if let hint = tokenUsage.hintLine, !hint.isEmpty {
-                                Text(hint)
-                                    .font(.footnote)
-                                    .foregroundStyle(MenuHighlightStyle.secondary(self.isHighlighted))
-                                    .lineLimit(4)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            if let error = tokenUsage.errorLine, !error.isEmpty {
-                                Text(error)
-                                    .font(.footnote)
-                                    .foregroundStyle(MenuHighlightStyle.error(self.isHighlighted))
-                                    .lineLimit(4)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .overlay {
-                                        ClickToCopyOverlay(copyText: tokenUsage.errorCopyText ?? error)
-                                    }
-                            }
-                        }
+                        TokenUsageCostGrid(tokenUsage: tokenUsage, font: .caption, isHighlighted: self.isHighlighted)
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, MenuPanelMetrics.contentHorizontalPadding)
                 .padding(.top, self.topPadding)
                 .padding(.bottom, self.bottomPadding)
                 .frame(width: self.width, alignment: .leading)
@@ -608,7 +645,7 @@ struct UsageMenuCardExtraUsageSectionView: View {
                 ProviderCostContent(
                     section: providerCost,
                     progressColor: self.model.progressColor)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, MenuPanelMetrics.contentHorizontalPadding)
                     .padding(.top, self.topPadding)
                     .padding(.bottom, self.bottomPadding)
                     .frame(width: self.width, alignment: .leading)
@@ -992,29 +1029,35 @@ extension UsageMenuCardView.Model {
         guard enabled else { return nil }
         guard let snapshot else { return nil }
 
-        let sessionCost = snapshot.sessionCostUSD.map { UsageFormatter.usdString($0) } ?? "—"
-        let sessionTokens = snapshot.sessionTokens.map { UsageFormatter.tokenCountString($0) }
+        let sessionCostStr = snapshot.sessionCostUSD.map { UsageFormatter.usdString($0) } ?? "—"
+        let sessionTokensStr = snapshot.sessionTokens.map { "\(UsageFormatter.tokenCountString($0)) tokens" }
         let sessionLine: String = {
-            if let sessionTokens {
-                return "Today: \(sessionCost) · \(sessionTokens) tokens"
+            if let sessionTokensStr {
+                return "Today: \(sessionCostStr) · \(sessionTokensStr)"
             }
-            return "Today: \(sessionCost)"
+            return "Today: \(sessionCostStr)"
         }()
 
-        let monthCost = snapshot.last30DaysCostUSD.map { UsageFormatter.usdString($0) } ?? "—"
+        let monthCostStr = snapshot.last30DaysCostUSD.map { UsageFormatter.usdString($0) } ?? "—"
         let fallbackTokens = snapshot.daily.compactMap(\.totalTokens).reduce(0, +)
         let monthTokensValue = snapshot.last30DaysTokens ?? (fallbackTokens > 0 ? fallbackTokens : nil)
-        let monthTokens = monthTokensValue.map { UsageFormatter.tokenCountString($0) }
+        let monthTokensStr = monthTokensValue.map { "\(UsageFormatter.tokenCountString($0)) tokens" }
         let monthLine: String = {
-            if let monthTokens {
-                return "Last 30 days: \(monthCost) · \(monthTokens) tokens"
+            if let monthTokensStr {
+                return "Last 30 days: \(monthCostStr) · \(monthTokensStr)"
             }
-            return "Last 30 days: \(monthCost)"
+            return "Last 30 days: \(monthCostStr)"
         }()
         let err = (error?.isEmpty ?? true) ? nil : error
         return TokenUsageSection(
             sessionLine: sessionLine,
             monthLine: monthLine,
+            sessionLabel: "Today:",
+            sessionCost: sessionCostStr,
+            sessionTokensLabel: sessionTokensStr,
+            monthLabel: "Last 30 days:",
+            monthCost: monthCostStr,
+            monthTokensLabel: monthTokensStr,
             hintLine: nil,
             errorLine: err,
             errorCopyText: (error?.isEmpty ?? true) ? nil : error)

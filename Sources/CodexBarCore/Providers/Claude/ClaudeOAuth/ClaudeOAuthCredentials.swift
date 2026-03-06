@@ -764,28 +764,12 @@ public enum ClaudeOAuthCredentialsStore {
         respectKeychainPromptCooldown: Bool) -> ClaudeOAuthCredentialRecord?
     {
         #if os(macOS)
-        let mode = ClaudeOAuthKeychainPromptPreference.current()
-        guard self.shouldAllowClaudeCodeKeychainAccess(mode: mode) else { return nil }
-
-        // If Keychain preflight indicates interaction is likely, skip the silent repair read.
-        // Why: non-interactive probes can still show UI on some systems, and if interaction is required we should
-        // let the interactive prompt path handle it (when allowed).
-        if self.shouldShowClaudeKeychainPreAlert() {
-            return nil
-        }
-
-        if self.isPromptPolicyApplicable,
-           respectKeychainPromptCooldown,
-           ProviderInteractionContext.current != .userInitiated,
-           !ClaudeOAuthKeychainAccessGate.shouldAllowPrompt(now: now)
-        {
-            return nil
-        }
+        guard self.keychainAccessAllowed else { return nil }
 
         do {
-            if self.shouldPreferSecurityCLIKeychainRead(),
+            if ClaudeOAuthKeychainPromptPreference.current() != .never,
                let securityData = self.loadFromClaudeKeychainViaSecurityCLIIfEnabled(
-                   interaction: ProviderInteractionContext.current),
+                   interaction: ProviderInteractionContext.current, readStrategy: .securityCLIExperimental),
                !securityData.isEmpty
             {
                 // Keep CLI-success repair prompt-safe in experimental mode by avoiding Security.framework fingerprint
@@ -805,6 +789,24 @@ public enum ClaudeOAuthCredentialsStore {
                     metadata: ["interaction": ProviderInteractionContext
                         .current == .userInitiated ? "user" : "background"])
                 return ClaudeOAuthCredentialRecord(credentials: creds, owner: .claudeCLI, source: .claudeKeychain)
+            }
+
+            guard self.shouldAllowClaudeCodeKeychainAccess(
+                mode: ClaudeOAuthKeychainPromptPreference.current()) else { return nil }
+
+            // If Keychain preflight indicates interaction is likely, skip the silent repair read.
+            // Why: non-interactive probes can still show UI on some systems, and if interaction is required we should
+            // let the interactive prompt path handle it (when allowed).
+            if self.shouldShowClaudeKeychainPreAlert() {
+                return nil
+            }
+
+            if self.isPromptPolicyApplicable,
+               respectKeychainPromptCooldown,
+               ProviderInteractionContext.current != .userInitiated,
+               !ClaudeOAuthKeychainAccessGate.shouldAllowPrompt(now: now)
+            {
+                return nil
             }
 
             guard let data = try self.loadFromClaudeKeychainNonInteractive(), !data.isEmpty else { return nil }
@@ -1510,12 +1512,12 @@ extension ClaudeOAuthCredentialsStore {
     @discardableResult
     static func syncFromClaudeKeychainWithoutPrompt(now: Date = Date()) -> Bool {
         #if os(macOS)
-        let mode = ClaudeOAuthKeychainPromptPreference.current()
-        guard self.shouldAllowClaudeCodeKeychainAccess(mode: mode) else { return false }
+        guard self.keychainAccessAllowed else { return false }
 
-        if let data = self.loadFromClaudeKeychainViaSecurityCLIIfEnabled(
-            interaction: ProviderInteractionContext.current),
-            !data.isEmpty
+        if ClaudeOAuthKeychainPromptPreference.current() != .never,
+           let data = self.loadFromClaudeKeychainViaSecurityCLIIfEnabled(
+               interaction: ProviderInteractionContext.current, readStrategy: .securityCLIExperimental),
+           !data.isEmpty
         {
             if let creds = try? ClaudeOAuthCredentials.parse(data: data), !creds.isExpired {
                 // Keep delegated refresh recovery on the security CLI path only in experimental mode.

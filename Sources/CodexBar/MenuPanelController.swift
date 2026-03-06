@@ -6,6 +6,7 @@ import SwiftUI
 final class MenuPanelController {
     private var panel: MenuPanel?
     private var hostingView: NSHostingView<AnyView>?
+    private var glassView: NSGlassEffectView?
     private nonisolated(unsafe) var globalClickMonitor: Any?
     private nonisolated(unsafe) var localClickMonitor: Any?
     private nonisolated(unsafe) var localKeyMonitor: Any?
@@ -28,8 +29,7 @@ final class MenuPanelController {
         guard !self.isShowing else { return }
 
         let content = self.contentBuilder()
-        let hosting = NSHostingView(rootView: content)
-        hosting.sizingOptions = [.intrinsicContentSize]
+        let hosting = self.hostingView(for: content)
         let fittingSize = hosting.fittingSize
 
         let panelRect = NSRect(origin: .zero, size: fittingSize)
@@ -42,8 +42,10 @@ final class MenuPanelController {
             self.panel = panel
         }
 
-        panel.contentView = self.wrapInGlassIfNeeded(hosting)
-        self.hostingView = hosting
+        let contentView = self.wrapInGlassIfNeeded(hosting)
+        if panel.contentView !== contentView {
+            panel.contentView = contentView
+        }
 
         let origin = self.panelOrigin(relativeTo: button, panelSize: fittingSize)
         panel.setFrameOrigin(origin)
@@ -76,21 +78,24 @@ final class MenuPanelController {
             } completionHandler: {
                 Task { @MainActor in
                     panel.orderOut(nil)
+                    self.teardownContent()
                 }
             }
         } else {
             panel.alphaValue = 0
             panel.orderOut(nil)
+            self.teardownContent()
         }
     }
 
     func updateContent() {
         guard self.isShowing, let panel = self.panel else { return }
         let content = self.contentBuilder()
-        let hosting = NSHostingView(rootView: content)
-        hosting.sizingOptions = [.intrinsicContentSize]
-        panel.contentView = self.wrapInGlassIfNeeded(hosting)
-        self.hostingView = hosting
+        let hosting = self.hostingView(for: content)
+        let contentView = self.wrapInGlassIfNeeded(hosting)
+        if panel.contentView !== contentView {
+            panel.contentView = contentView
+        }
 
         let fittingSize = hosting.fittingSize
         var frame = panel.frame
@@ -103,15 +108,40 @@ final class MenuPanelController {
 
     // MARK: - Glass Wrapping
 
+    private func hostingView(for content: AnyView) -> NSHostingView<AnyView> {
+        if let hosting = self.hostingView {
+            hosting.rootView = content
+            return hosting
+        }
+
+        let hosting = NSHostingView(rootView: content)
+        hosting.sizingOptions = [.intrinsicContentSize]
+        self.hostingView = hosting
+        return hosting
+    }
+
     private func wrapInGlassIfNeeded(_ hosting: NSHostingView<AnyView>) -> NSView {
         if #available(macOS 26, *), LiquidGlassAvailability.shouldApplyGlass {
+            if let glass = self.glassView {
+                glass.contentView = hosting
+                return glass
+            }
+
             let glass = NSGlassEffectView()
             glass.style = .regular
-            glass.cornerRadius = 12
+            glass.cornerRadius = MenuPanelMetrics.shellCornerRadius
             glass.contentView = hosting
+            self.glassView = glass
             return glass
         }
+        self.glassView = nil
         return hosting
+    }
+
+    private func teardownContent() {
+        self.panel?.contentView = nil
+        self.hostingView = nil
+        self.glassView = nil
     }
 
     // MARK: - Positioning
@@ -128,7 +158,7 @@ final class MenuPanelController {
         // Center panel horizontally under the button
         let panelX = buttonFrameOnScreen.midX - panelSize.width / 2
         // Position panel below the menu bar
-        let panelY = buttonFrameOnScreen.minY - panelSize.height - 4
+        let panelY = buttonFrameOnScreen.minY - panelSize.height - MenuPanelMetrics.panelAttachmentGap
 
         // Ensure panel doesn't clip off-screen
         guard let screen = buttonWindow.screen ?? NSScreen.main else {
@@ -140,15 +170,15 @@ final class MenuPanelController {
 
         // Clamp horizontal
         if origin.x + panelSize.width > visibleFrame.maxX {
-            origin.x = visibleFrame.maxX - panelSize.width - 4
+            origin.x = visibleFrame.maxX - panelSize.width - MenuPanelMetrics.screenEdgeInset
         }
         if origin.x < visibleFrame.minX {
-            origin.x = visibleFrame.minX + 4
+            origin.x = visibleFrame.minX + MenuPanelMetrics.screenEdgeInset
         }
 
         // Clamp vertical
         if origin.y < visibleFrame.minY {
-            origin.y = visibleFrame.minY + 4
+            origin.y = visibleFrame.minY + MenuPanelMetrics.screenEdgeInset
         }
 
         return origin

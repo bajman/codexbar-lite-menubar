@@ -16,47 +16,46 @@ struct CreditsHistoryChartMenuView: View {
         }
     }
 
-    private let breakdown: [OpenAIDashboardDailyBreakdown]
     private let width: CGFloat
+    private let model: Model
     @State private var selectedDayKey: String?
 
     init(breakdown: [OpenAIDashboardDailyBreakdown], width: CGFloat) {
-        self.breakdown = breakdown
         self.width = width
+        self.model = Self.makeModel(from: breakdown)
     }
 
     var body: some View {
-        let model = Self.makeModel(from: self.breakdown)
-        VStack(alignment: .leading, spacing: 10) {
-            if model.points.isEmpty {
+        VStack(alignment: .leading, spacing: MenuPanelMetrics.chartSectionSpacing) {
+            if self.model.points.isEmpty {
                 Text("No credits history data.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } else {
                 Chart {
-                    ForEach(model.points) { point in
+                    ForEach(self.model.points) { point in
                         BarMark(
                             x: .value("Day", point.date, unit: .day),
                             y: .value("Credits used", point.creditsUsed))
                             .foregroundStyle(Self.barColor)
                     }
-                    if let peak = Self.peakPoint(model: model) {
-                        let capStart = max(peak.creditsUsed - Self.capHeight(maxValue: model.maxCreditsUsed), 0)
+                    if let peak = Self.peakPoint(model: self.model) {
+                        let capStart = max(peak.creditsUsed - Self.capHeight(maxValue: self.model.maxCreditsUsed), 0)
                         BarMark(
                             x: .value("Day", peak.date, unit: .day),
                             yStart: .value("Cap start", capStart),
                             yEnd: .value("Cap end", peak.creditsUsed))
-                            .foregroundStyle(Color(nsColor: .systemYellow))
+                            .foregroundStyle(.yellow)
                     }
                 }
                 .chartYAxis(.hidden)
                 .chartXAxis {
-                    AxisMarks(values: model.axisDates) { _ in
+                    AxisMarks(values: self.model.axisDates) { _ in
                         AxisGridLine().foregroundStyle(Color.clear)
                         AxisTick().foregroundStyle(Color.clear)
                         AxisValueLabel(format: .dateTime.month(.abbreviated).day())
                             .font(.caption2)
-                            .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
+                            .foregroundStyle(.secondary)
                     }
                 }
                 .chartLegend(.hidden)
@@ -64,15 +63,15 @@ struct CreditsHistoryChartMenuView: View {
                 .chartOverlay { proxy in
                     GeometryReader { geo in
                         ZStack(alignment: .topLeading) {
-                            if let rect = self.selectionBandRect(model: model, proxy: proxy, geo: geo) {
-                                Rectangle()
+                            if let rect = self.selectionBandRect(model: self.model, proxy: proxy, geo: geo) {
+                                RoundedRectangle(cornerRadius: MenuPanelMetrics.compactSpacing, style: .continuous)
                                     .fill(Self.selectionBandColor)
                                     .frame(width: rect.width, height: rect.height)
                                     .position(x: rect.midX, y: rect.midY)
                                     .allowsHitTesting(false)
                             }
                             MouseLocationReader { location in
-                                self.updateSelection(location: location, model: model, proxy: proxy, geo: geo)
+                                self.updateSelection(location: location, model: self.model, proxy: proxy, geo: geo)
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .contentShape(Rectangle())
@@ -80,7 +79,7 @@ struct CreditsHistoryChartMenuView: View {
                     }
                 }
 
-                let detail = self.detailLines(model: model)
+                let detail = self.detailLines(model: self.model)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(detail.primary)
                         .font(.caption)
@@ -99,7 +98,7 @@ struct CreditsHistoryChartMenuView: View {
                         .opacity(detail.secondary == nil ? 0 : 1)
                 }
 
-                if let total = model.totalCreditsUsed {
+                if let total = self.model.totalCreditsUsed {
                     Text("Total (30d): \(total.formatted(.number.precision(.fractionLength(0...2)))) credits")
                         .font(.caption)
                         .fontDesign(MenuHighlightStyle.glassFontDesign)
@@ -107,8 +106,8 @@ struct CreditsHistoryChartMenuView: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, MenuPanelMetrics.chartSurfacePadding)
+        .padding(.vertical, MenuPanelMetrics.chartSurfacePadding)
         .frame(minWidth: self.width, maxWidth: .infinity, alignment: .leading)
     }
 
@@ -126,7 +125,7 @@ struct CreditsHistoryChartMenuView: View {
 
     private static let barColor = Color(red: 73 / 255, green: 163 / 255, blue: 176 / 255)
     private static var selectionBandColor: Color {
-        Color.secondary.opacity(0.16)
+        Color.secondary.opacity(0.22)
     }
 
     private static func capHeight(maxValue: Double) -> Double {

@@ -1,7 +1,7 @@
 import Foundation
 
 public enum LitePolicy {
-    public static let allowedKinds: Set<ProviderFetchKind> = [.oauth]
+    public static let allowedKinds: Set<ProviderFetchKind> = [.oauth, .localProbe]
 
     public static func validateStrategies(_ strategies: [any ProviderFetchStrategy], provider: UsageProvider) {
         #if DEBUG

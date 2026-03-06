@@ -18,8 +18,9 @@ extension CodexBarCLI {
         Description:
           Print usage from enabled providers as text (default) or JSON. Honors your in-app toggles.
           Output format: use --json (or --format json) for JSON on stdout; use --json-output for JSON logs on stderr.
-          Lite mode supports only direct OAuth/API fetch for Codex and Claude.
-          --source auto and --source oauth are equivalent in lite mode.
+          Lite mode uses direct OAuth/API fetch for Codex.
+          Claude --source auto uses the same lightweight quota probe as Claude Code and falls back to local logs
+          only when live auth is unavailable.
 
         Global flags:
           -h, --help      Show help

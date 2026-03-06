@@ -597,6 +597,65 @@ struct SettingsStoreTests {
     }
 
     @Test
+    func dataRefreshObservationIgnoresPresentationOnlySettings() async throws {
+        let suite = "SettingsStoreTests-observation-data-presentation"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        let configStore = testConfigStore(suiteName: suite)
+
+        let store = SettingsStore(
+            userDefaults: defaults,
+            configStore: configStore,
+            zaiTokenStore: NoopZaiTokenStore(),
+            syntheticTokenStore: NoopSyntheticTokenStore())
+
+        var didChange = false
+
+        withObservationTracking {
+            _ = store.dataRefreshObservationToken
+        } onChange: {
+            Task { @MainActor in
+                didChange = true
+            }
+        }
+
+        store.mergeIcons.toggle()
+        store.selectedMenuProvider = .claude
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        #expect(didChange == false)
+    }
+
+    @Test
+    func dataRefreshObservationTracksFetchAffectingSettings() async throws {
+        let suite = "SettingsStoreTests-observation-data-affecting"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        let configStore = testConfigStore(suiteName: suite)
+
+        let store = SettingsStore(
+            userDefaults: defaults,
+            configStore: configStore,
+            zaiTokenStore: NoopZaiTokenStore(),
+            syntheticTokenStore: NoopSyntheticTokenStore())
+
+        var didChange = false
+
+        withObservationTracking {
+            _ = store.dataRefreshObservationToken
+        } onChange: {
+            Task { @MainActor in
+                didChange = true
+            }
+        }
+
+        store.costUsageEnabled.toggle()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        #expect(didChange == true)
+    }
+
+    @Test
     func configBackedSettingsTriggerObservation() async throws {
         let suite = "SettingsStoreTests-observation-config"
         let defaults = try #require(UserDefaults(suiteName: suite))

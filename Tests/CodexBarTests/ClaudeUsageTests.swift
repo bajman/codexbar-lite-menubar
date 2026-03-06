@@ -29,6 +29,26 @@ struct ClaudeUsageTests {
     }
 
     @Test
+    func oauthUsageUtilizationPercentScaleTreatsIntegerOneAsPercent() throws {
+        let json = """
+        {
+          "five_hour": { "utilization": 1, "resets_at": "2025-12-23T16:00:00.000Z" },
+          "seven_day": { "utilization": 7, "resets_at": "2025-12-29T23:00:00.000Z" }
+        }
+        """
+        let response = try ClaudeOAuthUsageFetcher._decodeUsageResponseForTesting(Data(json.utf8))
+        let credentials = ClaudeOAuthCredentials(
+            accessToken: "token",
+            refreshToken: nil,
+            expiresAt: Date(timeIntervalSinceNow: 3600),
+            scopes: ["user:profile"],
+            rateLimitTier: nil)
+        let snapshot = ClaudeLiteFetcher._mapUsageForTesting(response, credentials: credentials)
+        #expect(snapshot.primary.usedPercent == 1)
+        #expect(snapshot.secondary?.usedPercent == 7)
+    }
+
+    @Test
     func parsesUsageJSONWithSonnetLimit() {
         let json = """
         {

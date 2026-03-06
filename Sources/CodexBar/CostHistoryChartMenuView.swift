@@ -21,50 +21,49 @@ struct CostHistoryChartMenuView: View {
     }
 
     private let provider: UsageProvider
-    private let daily: [DailyEntry]
     private let totalCostUSD: Double?
     private let width: CGFloat
+    private let model: Model
     @State private var selectedDateKey: String?
 
     init(provider: UsageProvider, daily: [DailyEntry], totalCostUSD: Double?, width: CGFloat) {
         self.provider = provider
-        self.daily = daily
         self.totalCostUSD = totalCostUSD
         self.width = width
+        self.model = Self.makeModel(provider: provider, daily: daily)
     }
 
     var body: some View {
-        let model = Self.makeModel(provider: self.provider, daily: self.daily)
-        VStack(alignment: .leading, spacing: 10) {
-            if model.points.isEmpty {
+        VStack(alignment: .leading, spacing: MenuPanelMetrics.chartSectionSpacing) {
+            if self.model.points.isEmpty {
                 Text("No cost history data.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } else {
                 Chart {
-                    ForEach(model.points) { point in
+                    ForEach(self.model.points) { point in
                         BarMark(
                             x: .value("Day", point.date, unit: .day),
                             y: .value("Cost", point.costUSD))
-                            .foregroundStyle(model.barColor)
+                            .foregroundStyle(self.model.barColor)
                     }
-                    if let peak = Self.peakPoint(model: model) {
-                        let capStart = max(peak.costUSD - Self.capHeight(maxValue: model.maxCostUSD), 0)
+                    if let peak = Self.peakPoint(model: self.model) {
+                        let capStart = max(peak.costUSD - Self.capHeight(maxValue: self.model.maxCostUSD), 0)
                         BarMark(
                             x: .value("Day", peak.date, unit: .day),
                             yStart: .value("Cap start", capStart),
                             yEnd: .value("Cap end", peak.costUSD))
-                            .foregroundStyle(Color(nsColor: .systemYellow))
+                            .foregroundStyle(.yellow)
                     }
                 }
                 .chartYAxis(.hidden)
                 .chartXAxis {
-                    AxisMarks(values: model.axisDates) { _ in
+                    AxisMarks(values: self.model.axisDates) { _ in
                         AxisGridLine().foregroundStyle(Color.clear)
                         AxisTick().foregroundStyle(Color.clear)
                         AxisValueLabel(format: .dateTime.month(.abbreviated).day())
                             .font(.caption2)
-                            .foregroundStyle(Color(nsColor: .tertiaryLabelColor))
+                            .foregroundStyle(.secondary)
                     }
                 }
                 .chartLegend(.hidden)
@@ -72,15 +71,15 @@ struct CostHistoryChartMenuView: View {
                 .chartOverlay { proxy in
                     GeometryReader { geo in
                         ZStack(alignment: .topLeading) {
-                            if let rect = self.selectionBandRect(model: model, proxy: proxy, geo: geo) {
-                                Rectangle()
+                            if let rect = self.selectionBandRect(model: self.model, proxy: proxy, geo: geo) {
+                                RoundedRectangle(cornerRadius: MenuPanelMetrics.compactSpacing, style: .continuous)
                                     .fill(Self.selectionBandColor)
                                     .frame(width: rect.width, height: rect.height)
                                     .position(x: rect.midX, y: rect.midY)
                                     .allowsHitTesting(false)
                             }
                             MouseLocationReader { location in
-                                self.updateSelection(location: location, model: model, proxy: proxy, geo: geo)
+                                self.updateSelection(location: location, model: self.model, proxy: proxy, geo: geo)
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .contentShape(Rectangle())
@@ -88,7 +87,7 @@ struct CostHistoryChartMenuView: View {
                     }
                 }
 
-                let detail = self.detailLines(model: model)
+                let detail = self.detailLines(model: self.model)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(detail.primary)
                         .font(.caption)
@@ -115,8 +114,8 @@ struct CostHistoryChartMenuView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, MenuPanelMetrics.chartSurfacePadding)
+        .padding(.vertical, MenuPanelMetrics.chartSurfacePadding)
         .frame(minWidth: self.width, maxWidth: .infinity, alignment: .leading)
     }
 
@@ -132,7 +131,7 @@ struct CostHistoryChartMenuView: View {
     }
 
     private static var selectionBandColor: Color {
-        Color.secondary.opacity(0.16)
+        Color.secondary.opacity(0.22)
     }
 
     private static func capHeight(maxValue: Double) -> Double {

@@ -11,7 +11,6 @@ import Logging
 /// 4. Stale disk cache (any age, if network fails)
 /// 5. Embedded pricing (EmbeddedPricing.jsonData)
 public actor PricingResolver {
-
     // MARK: - Types
 
     public struct ModelPricing: Sendable {
@@ -29,9 +28,8 @@ public actor PricingResolver {
 
     private static let logger = Logger(label: "PricingResolver")
     private static let litellmURL = URL(
-        string: "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
-    )!
-    private static let diskCacheTTL: TimeInterval = 24 * 60 * 60  // 24 hours
+        string: "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json")!
+    private static let diskCacheTTL: TimeInterval = 24 * 60 * 60 // 24 hours
 
     private let networkEnabled: Bool
     private let cacheDirectory: URL?
@@ -64,17 +62,17 @@ public actor PricingResolver {
     public func resolve(model: String) -> ModelPricing? {
         // Check resolution cache first.
         if let cached = resolutionCache[model] {
-            return cached.flatMap { pricingTable[$0] }
+            return cached.flatMap { self.pricingTable[$0] }
         }
 
-        let resolvedKey = resolveKey(model: model)
+        let resolvedKey = self.resolveKey(model: model)
         // We can't mutate from here since `self` is isolated, but we're
         // in an actor — just store it.
         // Note: can't use `resolutionCache[model] = resolvedKey` in a
         // non-mutating context, but actor methods are implicitly mutating.
         // Actually, actor methods CAN mutate state.
         // Store in cache for future lookups.
-        return resolvedKey.flatMap { pricingTable[$0] }
+        return resolvedKey.flatMap { self.pricingTable[$0] }
     }
 
     /// Compute total cost in USD for a set of token counts.
@@ -83,8 +81,8 @@ public actor PricingResolver {
         inputTokens: Int,
         cacheReadInputTokens: Int,
         cacheCreationInputTokens: Int,
-        outputTokens: Int
-    ) -> Double? {
+        outputTokens: Int) -> Double?
+    {
         guard let pricing = resolve(model: model) else { return nil }
 
         guard let threshold = pricing.tieredThreshold,
@@ -115,10 +113,10 @@ public actor PricingResolver {
             + Double(inputOverage) * inputAbove
         let cacheCreateCost = Double(cacheCreateBase) * pricing.cacheCreateCostPerToken
             + Double(cacheCreateOverage)
-                * (pricing.cacheCreateCostPerTokenAboveThreshold ?? pricing.cacheCreateCostPerToken)
+            * (pricing.cacheCreateCostPerTokenAboveThreshold ?? pricing.cacheCreateCostPerToken)
         let cacheReadCost = Double(cacheReadBase) * pricing.cacheReadCostPerToken
             + Double(cacheReadOverage)
-                * (pricing.cacheReadCostPerTokenAboveThreshold ?? pricing.cacheReadCostPerToken)
+            * (pricing.cacheReadCostPerTokenAboveThreshold ?? pricing.cacheReadCostPerToken)
 
         // Output: NEVER tiered.
         let outputCost = Double(outputTokens) * pricing.outputCostPerToken
@@ -128,7 +126,7 @@ public actor PricingResolver {
 
     /// Trigger a background network refresh. Call after init if desired.
     public func refreshFromNetwork() async {
-        guard networkEnabled else { return }
+        guard self.networkEnabled else { return }
         do {
             let data = try await Self.fetchFromNetwork()
             let parsed = Self.parsePricingJSON(data)
@@ -137,8 +135,8 @@ public actor PricingResolver {
                 return
             }
             self.pricingTable = parsed
-            self.resolutionCache = [:]  // Clear stale resolutions
-            Self.saveDiskCache(data, cacheDirectory: cacheDirectory)
+            self.resolutionCache = [:] // Clear stale resolutions
+            Self.saveDiskCache(data, cacheDirectory: self.cacheDirectory)
             Self.logger.info("Updated pricing from network (\(parsed.count) models)")
         } catch {
             Self.logger.warning("Network pricing fetch failed: \(error)")
@@ -157,24 +155,23 @@ public actor PricingResolver {
     /// Returns the pricing table key that matches this model, or nil.
     private func resolveKey(model: String) -> String? {
         // Step 1: Exact match.
-        if pricingTable[model] != nil { return model }
+        if self.pricingTable[model] != nil { return model }
 
         // Step 2: Try with provider prefix.
         for prefix in ["anthropic/", "openai/"] {
             let prefixed = prefix + model
-            if pricingTable[prefixed] != nil { return prefixed }
+            if self.pricingTable[prefixed] != nil { return prefixed }
         }
 
         // Step 3: Strip date suffix (e.g., "-20250514").
         let dateStripped = model.replacingOccurrences(
-            of: #"-\d{8}$"#, with: "", options: .regularExpression
-        )
+            of: #"-\d{8}$"#, with: "", options: .regularExpression)
         if dateStripped != model {
-            if pricingTable[dateStripped] != nil { return dateStripped }
+            if self.pricingTable[dateStripped] != nil { return dateStripped }
             // Also try with prefix after stripping date.
             for prefix in ["anthropic/", "openai/"] {
                 let prefixed = prefix + dateStripped
-                if pricingTable[prefixed] != nil { return prefixed }
+                if self.pricingTable[prefixed] != nil { return prefixed }
             }
         }
 
@@ -201,10 +198,10 @@ public actor PricingResolver {
         while let lastHyphen = candidate.lastIndex(of: "-") {
             candidate = String(candidate[..<lastHyphen])
             if candidate.isEmpty { break }
-            if pricingTable[candidate] != nil { return candidate }
+            if self.pricingTable[candidate] != nil { return candidate }
             for prefix in ["anthropic/", "openai/"] {
                 let prefixed = prefix + candidate
-                if pricingTable[prefixed] != nil { return prefixed }
+                if self.pricingTable[prefixed] != nil { return prefixed }
             }
         }
 
@@ -213,20 +210,19 @@ public actor PricingResolver {
 
     /// Limited resolution for recursive-like steps (4, 5, 6) — tries exact, prefixed, and date-stripped.
     private func resolveKeyWithoutRecursion(_ candidate: String) -> String? {
-        if pricingTable[candidate] != nil { return candidate }
+        if self.pricingTable[candidate] != nil { return candidate }
         for prefix in ["anthropic/", "openai/"] {
             let prefixed = prefix + candidate
-            if pricingTable[prefixed] != nil { return prefixed }
+            if self.pricingTable[prefixed] != nil { return prefixed }
         }
         // Also try date-stripped.
         let dateStripped = candidate.replacingOccurrences(
-            of: #"-\d{8}$"#, with: "", options: .regularExpression
-        )
+            of: #"-\d{8}$"#, with: "", options: .regularExpression)
         if dateStripped != candidate {
-            if pricingTable[dateStripped] != nil { return dateStripped }
+            if self.pricingTable[dateStripped] != nil { return dateStripped }
             for prefix in ["anthropic/", "openai/"] {
                 let prefixed = prefix + dateStripped
-                if pricingTable[prefixed] != nil { return prefixed }
+                if self.pricingTable[prefixed] != nil { return prefixed }
             }
         }
         return nil
@@ -237,7 +233,7 @@ public actor PricingResolver {
     /// Parse LiteLLM pricing JSON into a ModelPricing table.
     private static func parsePricingJSON(_ data: Data) -> [String: ModelPricing] {
         guard let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            logger.warning("Failed to parse pricing JSON")
+            self.logger.warning("Failed to parse pricing JSON")
             return [:]
         }
 
@@ -295,8 +291,7 @@ public actor PricingResolver {
                 tieredThreshold: tieredThreshold,
                 inputCostPerTokenAboveThreshold: inputAbove,
                 cacheReadCostPerTokenAboveThreshold: cacheReadAbove,
-                cacheCreateCostPerTokenAboveThreshold: cacheCreateAbove
-            )
+                cacheCreateCostPerTokenAboveThreshold: cacheCreateAbove)
         }
 
         return result
@@ -341,18 +336,17 @@ public actor PricingResolver {
         do {
             try FileManager.default.createDirectory(
                 at: url.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
+                withIntermediateDirectories: true)
             try data.write(to: url, options: .atomic)
         } catch {
-            logger.warning("Failed to save disk cache: \(error)")
+            self.logger.warning("Failed to save disk cache: \(error)")
         }
     }
 
     // MARK: - Network
 
     private static func fetchFromNetwork() async throws -> Data {
-        let (data, response) = try await URLSession.shared.data(from: litellmURL)
+        let (data, response) = try await URLSession.shared.data(from: self.litellmURL)
         guard let httpResponse = response as? HTTPURLResponse,
               (200..<300).contains(httpResponse.statusCode)
         else {

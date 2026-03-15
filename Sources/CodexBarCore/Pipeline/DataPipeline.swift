@@ -4,7 +4,6 @@ import Foundation
 /// Central coordinator that accepts RefreshRequests, coalesces them,
 /// limits concurrency, calls provider fetchers, and emits PipelineEvents.
 public actor DataPipeline {
-
     // MARK: - Types
 
     /// Events emitted by the pipeline for UsageStore consumption.
@@ -47,27 +46,25 @@ public actor DataPipeline {
         self.pricingResolver = pricingResolver
 
         let (stream, cont) = AsyncStream<PipelineEvent>.makeStream(
-            bufferingPolicy: .bufferingNewest(20)
-        )
+            bufferingPolicy: .bufferingNewest(20))
         self.events = stream
         self.continuation = cont
     }
 
     /// Start the processing loop. Safe to call multiple times (only starts once).
     public func start() {
-        guard !isStarted, !isShutDown else { return }
-        isStarted = true
-        processingTask = Task { [weak self] in
+        guard !self.isStarted, !self.isShutDown else { return }
+        self.isStarted = true
+        self.processingTask = Task { [weak self] in
             await self?.runProcessingLoop()
         }
-        safetyNetTask = Task.detached(priority: .background) { [weak self] in
+        self.safetyNetTask = Task.detached(priority: .background) { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(3600))
                 guard let self else { return }
                 await self.enqueue(RefreshRequest(
                     forceTokenUsage: true,
-                    priority: .p3
-                ))
+                    priority: .p3))
             }
         }
     }
@@ -75,70 +72,70 @@ public actor DataPipeline {
     /// Enqueue a refresh request. The request is merged with any pending
     /// request via CoalescingEngine. Automatically starts the pipeline if needed.
     public func enqueue(_ request: RefreshRequest) {
-        guard !isShutDown else { return }
-        if !isStarted { start() }
-        coalescing.mergeRefreshRequest(request)
-        logger.debug("Enqueued request priority=\(request.priority)")
+        guard !self.isShutDown else { return }
+        if !self.isStarted { self.start() }
+        self.coalescing.mergeRefreshRequest(request)
+        self.logger.debug("Enqueued request priority=\(request.priority)")
         // Wake the processing loop.
         if let signal = signalContinuation {
-            signalContinuation = nil
+            self.signalContinuation = nil
             signal.resume()
         }
     }
 
     /// Cancel all in-flight network requests (called on sleep).
     public func cancelInFlightRequests() {
-        for task in inFlightTasks {
+        for task in self.inFlightTasks {
             task.cancel()
         }
-        inFlightTasks.removeAll()
-        logger.info("Cancelled in-flight requests")
+        self.inFlightTasks.removeAll()
+        self.logger.info("Cancelled in-flight requests")
     }
 
     /// Shut down the pipeline (stop processing loop, finish event stream).
     public func shutdown() {
-        guard !isShutDown else { return }
-        isShutDown = true
-        processingTask?.cancel()
-        processingTask = nil
-        safetyNetTask?.cancel()
-        safetyNetTask = nil
-        cancelInFlightRequests()
+        guard !self.isShutDown else { return }
+        self.isShutDown = true
+        self.processingTask?.cancel()
+        self.processingTask = nil
+        self.safetyNetTask?.cancel()
+        self.safetyNetTask = nil
+        self.cancelInFlightRequests()
         // Wake any waiting signal so the loop can exit.
         if let signal = signalContinuation {
-            signalContinuation = nil
+            self.signalContinuation = nil
             signal.resume()
         }
-        continuation?.finish()
-        continuation = nil
-        logger.info("Pipeline shut down")
+        self.continuation?.finish()
+        self.continuation = nil
+        self.logger.info("Pipeline shut down")
     }
 
     // MARK: - Processing Loop
 
     private func runProcessingLoop() async {
-        while !Task.isCancelled && !isShutDown {
+        while !Task.isCancelled, !self.isShutDown {
             // Wait for a request to arrive.
-            await waitForRequest()
+            await self.waitForRequest()
 
-            guard !Task.isCancelled && !isShutDown else { break }
+            guard !Task.isCancelled, !self.isShutDown else { break }
 
             // Drain the coalesced request.
             guard let request = coalescing.drainPendingRequest() else {
                 continue
             }
 
-            await processRequest(request)
+            await self.processRequest(request)
         }
     }
 
     /// Suspends until `enqueue()` signals that a request is available.
     private func waitForRequest() async {
         // If there's already a pending request, return immediately.
-        if coalescing.hasPending { return }
+        if self.coalescing.hasPending { return }
 
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            signalContinuation = cont
+            self.signalContinuation = cont
         }
     }
 
@@ -146,15 +143,15 @@ public actor DataPipeline {
 
     private func processRequest(_ request: RefreshRequest) async {
         let providers = request.providers.isEmpty
-            ? UsageProvider.allCases.filter { isEnabled($0) }
+            ? UsageProvider.allCases.filter { self.isEnabled($0) }
             : Array(request.providers)
 
         guard !providers.isEmpty else {
-            logger.debug("No providers to refresh")
+            self.logger.debug("No providers to refresh")
             return
         }
 
-        logger.info("Processing request for \(providers.map(\.rawValue)) priority=\(request.priority)")
+        self.logger.info("Processing request for \(providers.map(\.rawValue)) priority=\(request.priority)")
 
         await withTaskGroup(of: Void.self) { group in
             for provider in providers {
@@ -165,46 +162,45 @@ public actor DataPipeline {
         }
 
         // Clean up completed in-flight tasks.
-        inFlightTasks.removeAll { $0.isCancelled }
+        self.inFlightTasks.removeAll { $0.isCancelled }
     }
 
     private func refreshProvider(_ provider: UsageProvider, request: RefreshRequest) async {
         // Quota refresh
-        let shouldSkipQuota = !request.forceQuota && coalescing.shouldSkip(
-            provider: provider, kind: .quota, priority: request.priority
-        )
+        let shouldSkipQuota = !request.forceQuota && self.coalescing.shouldSkip(
+            provider: provider, kind: .quota, priority: request.priority)
 
         if !shouldSkipQuota {
-            await networkLimiter.acquire()
+            await self.networkLimiter.acquire()
             do {
                 let snapshot = try await fetchQuota(for: provider)
-                continuation?.yield(.quotaUpdated(provider, snapshot))
-                coalescing.recordCompletion(provider: provider, kind: .quota)
-                logger.debug("Quota updated for \(provider.rawValue)")
+                self.continuation?.yield(.quotaUpdated(provider, snapshot))
+                self.coalescing.recordCompletion(provider: provider, kind: .quota)
+                self.logger.debug("Quota updated for \(provider.rawValue)")
             } catch {
                 if !Task.isCancelled {
-                    continuation?.yield(.error(provider, error))
-                    logger.warning("Quota fetch failed for \(provider.rawValue): \(error)")
+                    self.continuation?.yield(.error(provider, error))
+                    self.logger.warning("Quota fetch failed for \(provider.rawValue): \(error)")
                 }
             }
-            await networkLimiter.release()
+            await self.networkLimiter.release()
         }
 
         // Cost refresh (placeholder — will be fully wired in Task 15)
         if request.forceTokenUsage {
-            await fileScanLimiter.acquire()
+            await self.fileScanLimiter.acquire()
             do {
                 let snapshot = try await fetchCost(for: provider)
-                continuation?.yield(.costUpdated(provider, snapshot))
-                coalescing.recordCompletion(provider: provider, kind: .tokenCost)
-                logger.debug("Cost updated for \(provider.rawValue)")
+                self.continuation?.yield(.costUpdated(provider, snapshot))
+                self.coalescing.recordCompletion(provider: provider, kind: .tokenCost)
+                self.logger.debug("Cost updated for \(provider.rawValue)")
             } catch {
                 if !Task.isCancelled {
-                    continuation?.yield(.error(provider, error))
-                    logger.warning("Cost fetch failed for \(provider.rawValue): \(error)")
+                    self.continuation?.yield(.error(provider, error))
+                    self.logger.warning("Cost fetch failed for \(provider.rawValue): \(error)")
                 }
             }
-            await fileScanLimiter.release()
+            await self.fileScanLimiter.release()
         }
     }
 
@@ -213,15 +209,13 @@ public actor DataPipeline {
     private nonisolated func isEnabled(_ provider: UsageProvider) -> Bool {
         switch provider {
         case .claude:
-            return FileManager.default.fileExists(
-                atPath: NSHomeDirectory() + "/.claude"
-            )
+            FileManager.default.fileExists(
+                atPath: NSHomeDirectory() + "/.claude")
         case .codex:
-            return FileManager.default.fileExists(
-                atPath: NSHomeDirectory() + "/.codex"
-            )
+            FileManager.default.fileExists(
+                atPath: NSHomeDirectory() + "/.codex")
         default:
-            return false
+            false
         }
     }
 
@@ -256,7 +250,7 @@ enum DataPipelineError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .unsupportedProvider(let provider):
+        case let .unsupportedProvider(provider):
             "Unsupported provider: \(provider.rawValue)"
         case .costScanningNotImplemented:
             "Cost scanning is not yet implemented in the pipeline."

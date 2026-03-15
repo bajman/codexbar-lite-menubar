@@ -5,16 +5,17 @@ import Foundation
 
 // MARK: - File-scope C callback
 
-/// C callback for FSEventStream. Runs on the FSEvents dispatch queue, not the actor executor.
-/// Bridges to the actor via an unstructured Task to avoid reentrancy deadlock.
+// C callback for FSEventStream. Runs on the FSEvents dispatch queue, not the actor executor.
+// Bridges to the actor via an unstructured Task to avoid reentrancy deadlock.
+// swiftlint:disable:next function_parameter_count
 private func fsEventsCallback(
     _ streamRef: ConstFSEventStreamRef,
     _ clientCallBackInfo: UnsafeMutableRawPointer?,
     _ numEvents: Int,
     _ eventPaths: UnsafeMutableRawPointer,
     _ eventFlags: UnsafePointer<FSEventStreamEventFlags>,
-    _ eventIds: UnsafePointer<FSEventStreamEventId>
-) {
+    _ eventIds: UnsafePointer<FSEventStreamEventId>)
+{
     guard let info = clientCallBackInfo else { return }
     let watcher = Unmanaged<FSEventsWatcher>.fromOpaque(info).takeUnretainedValue()
 
@@ -43,7 +44,6 @@ private func fsEventsCallback(
 /// Actor that wraps the macOS FSEvents C API to watch directory trees for file changes,
 /// emitting filtered, coalesced events via AsyncStream.
 public actor FSEventsWatcher {
-
     // MARK: - Public types
 
     public struct FileChangeEvent: Sendable {
@@ -64,7 +64,7 @@ public actor FSEventsWatcher {
 
     private struct WatchEntry {
         let stream: FSEventStreamRef
-        let fileExtensions: Set<String>   // empty = watch all extensions
+        let fileExtensions: Set<String> // empty = watch all extensions
         let continuation: AsyncStream<[FileChangeEvent]>.Continuation
         let coalescingLatency: TimeInterval
         /// Coalesced events waiting for the flush timer to fire
@@ -91,20 +91,21 @@ public actor FSEventsWatcher {
     ///   - coalescingLatency: How long to buffer rapid events before emitting them (default 2 s).
     public func watch(
         directories: [(url: URL, fileExtensions: Set<String>)],
-        coalescingLatency: TimeInterval = 2.0
-    ) -> AsyncStream<[FileChangeEvent]> {
-        let paths = directories.map { $0.url.path }
+        coalescingLatency: TimeInterval = 2.0) -> AsyncStream<[FileChangeEvent]>
+    {
+        let paths = directories.map(\.url.path)
 
         // Merge all extensions from all watched directories for this stream's filter.
         let allExtensions = directories.reduce(into: Set<String>()) { $0.formUnion($1.fileExtensions) }
 
         // Retrieve persisted last event ID so FSEvents replays missed events.
-        let storedIdKey = lastEventIdKeyFor(paths: paths)
-        let sinceWhen: FSEventStreamEventId
-        if let stored = UserDefaults.standard.object(forKey: storedIdKey) as? UInt64 {
-            sinceWhen = stored
+        let storedIdKey = self.lastEventIdKeyFor(paths: paths)
+        let sinceWhen: FSEventStreamEventId = if let stored = UserDefaults.standard
+            .object(forKey: storedIdKey) as? UInt64
+        {
+            stored
         } else {
-            sinceWhen = FSEventStreamEventId(kFSEventStreamEventIdSinceNow)
+            FSEventStreamEventId(kFSEventStreamEventIdSinceNow)
         }
 
         var continuation: AsyncStream<[FileChangeEvent]>.Continuation!
@@ -118,14 +119,12 @@ public actor FSEventsWatcher {
             info: selfPtr,
             retain: nil,
             release: nil,
-            copyDescription: nil
-        )
+            copyDescription: nil)
 
         let flags: FSEventStreamCreateFlags = UInt32(
             kFSEventStreamCreateFlagFileEvents |
-            kFSEventStreamCreateFlagUseCFTypes |
-            kFSEventStreamCreateFlagNoDefer
-        )
+                kFSEventStreamCreateFlagUseCFTypes |
+                kFSEventStreamCreateFlagNoDefer)
 
         guard let fsStream = FSEventStreamCreate(
             nil,
@@ -134,49 +133,48 @@ public actor FSEventsWatcher {
             paths as CFArray,
             sinceWhen,
             coalescingLatency,
-            flags
-        ) else {
+            flags)
+        else {
             continuation.finish()
             return stream
         }
 
-        FSEventStreamSetDispatchQueue(fsStream, dispatchQueue)
+        FSEventStreamSetDispatchQueue(fsStream, self.dispatchQueue)
         FSEventStreamStart(fsStream)
 
         let entry = WatchEntry(
             stream: fsStream,
             fileExtensions: allExtensions,
             continuation: continuation,
-            coalescingLatency: coalescingLatency
-        )
-        entries.append(entry)
+            coalescingLatency: coalescingLatency)
+        self.entries.append(entry)
         return stream
     }
 
     /// Stop all active FSEvent streams and finish all AsyncStreams.
     public func stopAll() {
-        for entry in entries {
+        for entry in self.entries {
             entry.flushTask?.cancel()
             FSEventStreamStop(entry.stream)
             FSEventStreamInvalidate(entry.stream)
             FSEventStreamRelease(entry.stream)
             entry.continuation.finish()
         }
-        entries.removeAll()
+        self.entries.removeAll()
     }
 
     /// Returns the time elapsed since the last FSEvents callback fired (useful for health checks).
     func lastCallbackAge() -> TimeInterval {
-        Date().timeIntervalSince(lastCallbackTime)
+        Date().timeIntervalSince(self.lastCallbackTime)
     }
 
     // MARK: - Internal: called from the C callback via Task
 
     /// Process raw events coming off the FSEvents dispatch queue.
     func handleEvents(_ rawEvents: [RawEvent]) {
-        lastCallbackTime = Date()
+        self.lastCallbackTime = Date()
 
-        for i in 0..<entries.count {
+        for i in 0..<self.entries.count {
             var addedAny = false
 
             for raw in rawEvents {
@@ -185,28 +183,28 @@ public actor FSEventsWatcher {
                 let pass: Bool
                 if mustScan {
                     pass = true
-                } else if entries[i].fileExtensions.isEmpty {
+                } else if self.entries[i].fileExtensions.isEmpty {
                     pass = true
                 } else {
                     let ext = (raw.path as NSString).pathExtension
-                    pass = entries[i].fileExtensions.contains(ext)
+                    pass = self.entries[i].fileExtensions.contains(ext)
                 }
 
                 guard pass else { continue }
 
                 let event = FileChangeEvent(path: raw.path, flags: raw.flags, eventId: raw.eventId)
-                entries[i].pendingEvents.append(event)
+                self.entries[i].pendingEvents.append(event)
                 addedAny = true
 
                 // Persist the latest event ID.
-                UserDefaults.standard.set(raw.eventId, forKey: lastEventIdKeyBase)
+                UserDefaults.standard.set(raw.eventId, forKey: self.lastEventIdKeyBase)
             }
 
             // Arm the flush timer if we added new events and there isn't one running already.
-            if addedAny && entries[i].flushTask == nil {
-                let latency = entries[i].coalescingLatency
+            if addedAny, self.entries[i].flushTask == nil {
+                let latency = self.entries[i].coalescingLatency
                 let idx = i
-                entries[i].flushTask = Task { [weak self] in
+                self.entries[i].flushTask = Task { [weak self] in
                     try? await Task.sleep(for: .seconds(latency))
                     await self?.flush(index: idx)
                 }
@@ -218,20 +216,20 @@ public actor FSEventsWatcher {
 
     /// Emit all pending events for the entry at `index` and reset its flush state.
     func flush(index: Int) {
-        guard index < entries.count else { return }
-        guard !entries[index].pendingEvents.isEmpty else {
-            entries[index].flushTask = nil
+        guard index < self.entries.count else { return }
+        guard !self.entries[index].pendingEvents.isEmpty else {
+            self.entries[index].flushTask = nil
             return
         }
-        let batch = entries[index].pendingEvents
-        entries[index].pendingEvents = []
-        entries[index].flushTask = nil
-        entries[index].continuation.yield(batch)
+        let batch = self.entries[index].pendingEvents
+        self.entries[index].pendingEvents = []
+        self.entries[index].flushTask = nil
+        self.entries[index].continuation.yield(batch)
     }
 
     private func lastEventIdKeyFor(paths: [String]) -> String {
         let sorted = paths.sorted().joined(separator: ":")
-        return "\(lastEventIdKeyBase).\(sorted.hashValue)"
+        return "\(self.lastEventIdKeyBase).\(sorted.hashValue)"
     }
 }
 #endif

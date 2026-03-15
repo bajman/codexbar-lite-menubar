@@ -622,19 +622,19 @@ final class UsageStore {
     /// Subscribe to the DataPipeline event stream and update UI state reactively.
     private func subscribeToPipeline() {
         guard let pipeline else { return }
-        pipelineSubscription?.cancel()
-        pipelineSubscription = Task { [weak self] in
+        self.pipelineSubscription?.cancel()
+        self.pipelineSubscription = Task { [weak self] in
             let events = pipeline.events
             for await event in events {
                 guard let self else { return }
                 switch event {
-                case .quotaUpdated(let provider, let snapshot):
+                case let .quotaUpdated(provider, snapshot):
                     self.snapshots[provider] = snapshot
                     self.errors[provider] = nil
-                case .costUpdated(let provider, let costSnapshot):
+                case let .costUpdated(provider, costSnapshot):
                     self.tokenSnapshots[provider] = costSnapshot
                     self.tokenErrors[provider] = nil
-                case .error(let provider, let error):
+                case let .error(provider, error):
                     // Only surface errors if we don't have cached data
                     if self.snapshots[provider] == nil {
                         self.errors[provider] = error.localizedDescription
@@ -651,7 +651,7 @@ final class UsageStore {
         let pricingResolver = PricingResolver(networkEnabled: true)
         let pipeline = DataPipeline(pricingResolver: pricingResolver)
         self.pipeline = pipeline
-        subscribeToPipeline()
+        self.subscribeToPipeline()
 
         // 1. FSEvents watcher
         let watcher = FSEventsWatcher()
@@ -677,8 +677,7 @@ final class UsageStore {
 
             let stream = await watcher.watch(
                 directories: watchDirs,
-                coalescingLatency: 2.0
-            )
+                coalescingLatency: 2.0)
 
             // FSEvents -> pipeline bridge
             for await batch in stream {
@@ -687,8 +686,7 @@ final class UsageStore {
                     await adaptiveTimer.recordFSEvent()
                     await pipeline.enqueue(RefreshRequest(
                         forceTokenUsage: true,
-                        priority: .p1
-                    ))
+                        priority: .p1))
                 }
             }
         }
@@ -712,15 +710,14 @@ final class UsageStore {
                 await pipeline?.enqueue(RefreshRequest(
                     forceQuota: true,
                     forceTokenUsage: true,
-                    priority: .p0
-                ))
+                    priority: .p0))
                 await adaptiveTimer?.resume()
             },
             onSleep: { [weak pipeline, weak adaptiveTimer] in
                 await pipeline?.cancelInFlightRequests()
                 await adaptiveTimer?.pause()
             },
-            onSpaceChange: { }  // Panel dismiss handled elsewhere
+            onSpaceChange: {}, // Panel dismiss handled elsewhere
         )
         lifecycle.start()
         self.systemLifecycleObserver = lifecycle
@@ -728,8 +725,8 @@ final class UsageStore {
 
     /// Stop the data pipeline.
     func stopPipeline() {
-        pipelineSubscription?.cancel()
-        pipelineSubscription = nil
+        self.pipelineSubscription?.cancel()
+        self.pipelineSubscription = nil
 
         if let pipeline {
             Task { await pipeline.shutdown() }
@@ -739,12 +736,12 @@ final class UsageStore {
         if let watcher = fsEventsWatcher {
             Task { await watcher.stopAll() }
         }
-        fsEventsWatcher = nil
+        self.fsEventsWatcher = nil
 
-        systemLifecycleObserver?.stop()
-        systemLifecycleObserver = nil
+        self.systemLifecycleObserver?.stop()
+        self.systemLifecycleObserver = nil
 
-        adaptiveTimer = nil
+        self.adaptiveTimer = nil
     }
 
     /// Enqueue a user-initiated refresh into the pipeline.
@@ -754,8 +751,7 @@ final class UsageStore {
             await pipeline.enqueue(RefreshRequest(
                 forceQuota: true,
                 forceTokenUsage: true,
-                priority: .p0
-            ))
+                priority: .p0))
         }
     }
 

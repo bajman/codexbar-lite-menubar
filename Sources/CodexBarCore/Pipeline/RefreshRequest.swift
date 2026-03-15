@@ -1,4 +1,4 @@
-// Sources/CodexBarCore/Pipeline/RefreshRequest.swift
+/// Sources/CodexBarCore/Pipeline/RefreshRequest.swift
 /// Describes a data refresh request with priority and scope.
 public struct RefreshRequest: Sendable {
     /// Which providers to refresh. Empty = all enabled providers.
@@ -18,10 +18,10 @@ public struct RefreshRequest: Sendable {
     public var priority: Priority = .p2
 
     public enum Priority: Int, Comparable, Sendable {
-        case p0 = 0  // user action, wake-from-sleep, credential change
-        case p1 = 1  // FSEvents JSONL write
-        case p2 = 2  // adaptive timer poll
-        case p3 = 3  // background maintenance
+        case p0 = 0 // user action, wake-from-sleep, credential change
+        case p1 = 1 // FSEvents JSONL write
+        case p2 = 2 // adaptive timer poll
+        case p3 = 3 // background maintenance
 
         public static func < (lhs: Self, rhs: Self) -> Bool {
             lhs.rawValue < rhs.rawValue
@@ -33,8 +33,8 @@ public struct RefreshRequest: Sendable {
         forceQuota: Bool = false,
         forceTokenUsage: Bool = false,
         forceStatusChecks: Bool = false,
-        priority: Priority = .p2
-    ) {
+        priority: Priority = .p2)
+    {
         self.providers = providers
         self.forceQuota = forceQuota
         self.forceTokenUsage = forceTokenUsage
@@ -44,10 +44,10 @@ public struct RefreshRequest: Sendable {
 
     /// Merge another request into this one, keeping highest priority and OR-ing flags.
     public mutating func merge(_ other: RefreshRequest) {
-        providers.formUnion(other.providers)
-        forceTokenUsage = forceTokenUsage || other.forceTokenUsage
-        forceStatusChecks = forceStatusChecks || other.forceStatusChecks
-        forceQuota = forceQuota || other.forceQuota
-        priority = min(priority, other.priority)
+        self.providers.formUnion(other.providers)
+        self.forceTokenUsage = self.forceTokenUsage || other.forceTokenUsage
+        self.forceStatusChecks = self.forceStatusChecks || other.forceStatusChecks
+        self.forceQuota = self.forceQuota || other.forceQuota
+        self.priority = min(self.priority, other.priority)
     }
 }

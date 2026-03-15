@@ -1,5 +1,5 @@
 /// Actor-based bounded concurrency limiter using Swift concurrency primitives.
-actor ConcurrencyLimiter: Sendable {
+actor ConcurrencyLimiter {
     private let limit: Int
     private var active: Int = 0
     private var waiters: [CheckedContinuation<Void, Never>] = []
@@ -10,21 +10,21 @@ actor ConcurrencyLimiter: Sendable {
     }
 
     func acquire() async {
-        if active < limit {
-            active += 1
+        if self.active < self.limit {
+            self.active += 1
             return
         }
         await withCheckedContinuation { continuation in
-            waiters.append(continuation)
+            self.waiters.append(continuation)
         }
     }
 
     func release() {
-        precondition(active > 0, "ConcurrencyLimiter: release without matching acquire")
-        active -= 1
-        if !waiters.isEmpty {
-            let next = waiters.removeFirst()
-            active += 1
+        precondition(self.active > 0, "ConcurrencyLimiter: release without matching acquire")
+        self.active -= 1
+        if !self.waiters.isEmpty {
+            let next = self.waiters.removeFirst()
+            self.active += 1
             next.resume()
         }
     }

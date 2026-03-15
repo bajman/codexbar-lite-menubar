@@ -130,7 +130,7 @@ extension CostUsageScanner {
 
                 if entry.needsTemporalGrouping {
                     // Layer 2: group by file + model + 5-second window, keep MAX values
-                    let groupKey = "\(fileURL.path):\(entry.model):\(roundedTimestamp5s(entry.timestamp))"
+                    let groupKey = "\(fileURL.path):\(entry.model):\(self.roundedTimestamp5s(entry.timestamp))"
                     if let existing = temporalGroups[groupKey] {
                         temporalGroups[groupKey] = TemporalEntry(
                             tokens: ClaudeTokens(

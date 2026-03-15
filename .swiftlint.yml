@@ -24,6 +24,7 @@ excluded:
   - "*.playground"
   # Exclude specific files that should not be linted/formatted
   - "Core/PeekabooCore/Sources/PeekabooCore/Extensions/NSArray+Extensions.swift"
+  - "Sources/CodexBarCore/Pipeline/EmbeddedPricing.swift"
 
 # Analyzer rules (require compilation)
 analyzer_rules:

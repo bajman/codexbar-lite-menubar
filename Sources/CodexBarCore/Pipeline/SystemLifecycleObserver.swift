@@ -16,25 +16,25 @@ public final class SystemLifecycleObserver {
     public init(
         onWake: @escaping @Sendable (_ sleepDuration: TimeInterval) async -> Void,
         onSleep: @escaping @Sendable () async -> Void,
-        onSpaceChange: @escaping @MainActor () -> Void
-    ) {
+        onSpaceChange: @escaping @MainActor () -> Void)
+    {
         self.onWake = onWake
         self.onSleep = onSleep
         self.onSpaceChange = onSpaceChange
     }
 
     public func start() {
-        activityToken = ProcessInfo.processInfo.beginActivity(
+        self.activityToken = ProcessInfo.processInfo.beginActivity(
             options: .userInitiatedAllowingIdleSystemSleep,
-            reason: "CodexBar usage monitoring"
-        )
+            reason: "CodexBar usage monitoring")
 
         let ws = NSWorkspace.shared.notificationCenter
 
-        observers.append(ws.addObserver(
+        self.observers.append(ws.addObserver(
             forName: NSWorkspace.willSleepNotification,
-            object: nil, queue: .main
-        ) { [weak self] _ in
+            object: nil,
+            queue: .main)
+        { [weak self] _ in
             guard let self else { return }
             let onSleep = self.onSleep
             Task { @MainActor in
@@ -43,10 +43,11 @@ public final class SystemLifecycleObserver {
             }
         })
 
-        observers.append(ws.addObserver(
+        self.observers.append(ws.addObserver(
             forName: NSWorkspace.didWakeNotification,
-            object: nil, queue: .main
-        ) { [weak self] _ in
+            object: nil,
+            queue: .main)
+        { [weak self] _ in
             guard let self else { return }
             let onWake = self.onWake
             Task { @MainActor in
@@ -56,10 +57,11 @@ public final class SystemLifecycleObserver {
             }
         })
 
-        observers.append(ws.addObserver(
+        self.observers.append(ws.addObserver(
             forName: NSWorkspace.activeSpaceDidChangeNotification,
-            object: nil, queue: .main
-        ) { [weak self] _ in
+            object: nil,
+            queue: .main)
+        { [weak self] _ in
             let onSpaceChange = self?.onSpaceChange
             Task { @MainActor in onSpaceChange?() }
         })
@@ -67,11 +69,13 @@ public final class SystemLifecycleObserver {
 
     public func stop() {
         let ws = NSWorkspace.shared.notificationCenter
-        for observer in observers { ws.removeObserver(observer) }
-        observers.removeAll()
+        for observer in self.observers {
+            ws.removeObserver(observer)
+        }
+        self.observers.removeAll()
         if let token = activityToken {
             ProcessInfo.processInfo.endActivity(token)
-            activityToken = nil
+            self.activityToken = nil
         }
     }
 

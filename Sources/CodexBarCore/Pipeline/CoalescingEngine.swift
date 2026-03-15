@@ -21,15 +21,15 @@ struct CoalescingEngine: Sendable {
     mutating func mergeRefreshRequest(_ request: RefreshRequest) {
         if var existing = pendingRequest {
             existing.merge(request)
-            pendingRequest = existing
+            self.pendingRequest = existing
         } else {
-            pendingRequest = request
+            self.pendingRequest = request
         }
     }
 
     mutating func drainPendingRequest() -> RefreshRequest? {
         defer { pendingRequest = nil }
-        return pendingRequest
+        return self.pendingRequest
     }
 
     func shouldSkip(provider: UsageProvider, kind: FetchKind, priority: RefreshRequest.Priority) -> Bool {
@@ -41,11 +41,11 @@ struct CoalescingEngine: Sendable {
     }
 
     mutating func recordCompletion(provider: UsageProvider, kind: FetchKind) {
-        lastCompletion["\(provider):\(kind)"] = Date()
+        self.lastCompletion["\(provider):\(kind)"] = Date()
     }
 
     /// Whether a pending request exists (without draining it).
     var hasPending: Bool {
-        pendingRequest != nil
+        self.pendingRequest != nil
     }
 }

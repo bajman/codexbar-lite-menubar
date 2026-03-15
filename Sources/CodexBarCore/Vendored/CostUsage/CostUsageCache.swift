@@ -65,8 +65,8 @@ struct CostUsageFileUsage: Codable, Sendable {
     var lastModel: String?
     var lastTotals: CostUsageCodexTotals?
     var sessionId: String?
-    var headerFingerprint: Data?     // SHA256 of first 4096 bytes (nil = legacy entry)
-    var inodeIdentifier: UInt64?     // stat().st_ino (nil = legacy entry)
+    var headerFingerprint: Data? // SHA256 of first 4096 bytes (nil = legacy entry)
+    var inodeIdentifier: UInt64? // stat().st_ino (nil = legacy entry)
 }
 
 struct CostUsageCodexTotals: Codable, Sendable {

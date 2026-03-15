@@ -10,6 +10,9 @@ extension CostUsageScanner {
         let cacheReadTokens: Int
         let cacheCreationTokens: Int
         let outputTokens: Int
+        /// When true, this entry lacked a complete messageId+requestId pair and needs
+        /// temporal-grouping deduplication (Layer 2) instead of key-based dedup (Layer 1).
+        var needsTemporalGrouping: Bool = false
 
         var totalTokens: Int {
             self.inputTokens + self.cacheReadTokens + self.cacheCreationTokens + self.outputTokens
@@ -68,6 +71,15 @@ extension CostUsageScanner {
             let costNanos: Int
         }
 
+        // Layer 2: temporal grouping for entries missing messageId or requestId.
+        // Key: "filePath:model:roundedTimestamp5s" -> accumulates MAX token counts
+        struct TemporalEntry {
+            var tokens: ClaudeTokens
+            let dayKey: String
+            let model: String
+        }
+        var temporalGroups: [String: TemporalEntry] = [:]
+
         func add(dayKey: String, model: String, tokens: ClaudeTokens) {
             guard CostUsageDayRange.isInRange(dayKey: dayKey, since: range.scanSinceKey, until: range.scanUntilKey)
             else { return }
@@ -115,10 +127,43 @@ extension CostUsageScanner {
                     cacheCreate: entry.cacheCreationTokens,
                     output: entry.outputTokens,
                     costNanos: costNanos)
-                add(dayKey: dayKey, model: entry.model, tokens: tokens)
+
+                if entry.needsTemporalGrouping {
+                    // Layer 2: group by file + model + 5-second window, keep MAX values
+                    let groupKey = "\(fileURL.path):\(entry.model):\(roundedTimestamp5s(entry.timestamp))"
+                    if let existing = temporalGroups[groupKey] {
+                        temporalGroups[groupKey] = TemporalEntry(
+                            tokens: ClaudeTokens(
+                                input: max(existing.tokens.input, tokens.input),
+                                cacheRead: max(existing.tokens.cacheRead, tokens.cacheRead),
+                                cacheCreate: max(existing.tokens.cacheCreate, tokens.cacheCreate),
+                                output: max(existing.tokens.output, tokens.output),
+                                costNanos: max(existing.tokens.costNanos, tokens.costNanos)),
+                            dayKey: dayKey,
+                            model: entry.model)
+                    } else {
+                        temporalGroups[groupKey] = TemporalEntry(
+                            tokens: tokens,
+                            dayKey: dayKey,
+                            model: entry.model)
+                    }
+                } else {
+                    // Layer 1: key-based dedup already handled in parseClaudeRecentUsageLine
+                    add(dayKey: dayKey, model: entry.model, tokens: tokens)
+                }
             })) ?? startOffset
 
+        // Flush temporal groups into days
+        for (_, group) in temporalGroups {
+            add(dayKey: group.dayKey, model: group.model, tokens: group.tokens)
+        }
+
         return ClaudeParseResult(days: days, parsedBytes: parsedBytes)
+    }
+
+    /// Round a Date to 5-second boundaries for temporal grouping.
+    private static func roundedTimestamp5s(_ date: Date) -> Int {
+        Int(date.timeIntervalSince1970 / 5) * 5
     }
 
     static func loadClaudeRecentUsage(
@@ -221,6 +266,7 @@ extension CostUsageScanner {
 
         let messageId = message["id"] as? String
         let requestId = obj["requestId"] as? String
+        let hasCompleteKey = messageId != nil && requestId != nil
         if let messageId, let requestId {
             let key = "\(messageId):\(requestId)"
             if seenKeys.contains(key) { return nil }
@@ -246,7 +292,8 @@ extension CostUsageScanner {
             inputTokens: input,
             cacheReadTokens: cacheRead,
             cacheCreationTokens: cacheCreate,
-            outputTokens: output)
+            outputTokens: output,
+            needsTemporalGrouping: !hasCompleteKey)
     }
 
     private static let vertexProviderKeys: Set<String> = [

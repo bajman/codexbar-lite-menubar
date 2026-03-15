@@ -328,9 +328,23 @@ enum CostUsageScanner {
                     let output = toInt(total["output_tokens"])
 
                     let prev = previousTotals
-                    deltaInput = max(0, input - (prev?.input ?? 0))
-                    deltaCached = max(0, cached - (prev?.cached ?? 0))
-                    deltaOutput = max(0, output - (prev?.output ?? 0))
+                    // Detect counter reset: if BOTH input and output drop simultaneously,
+                    // the session restarted. Use absolute values, not deltas.
+                    let bothDropped = prev != nil
+                        && input < (prev?.input ?? 0)
+                        && output < (prev?.output ?? 0)
+
+                    if bothDropped {
+                        // Counter reset — treat current values as absolute
+                        deltaInput = input
+                        deltaCached = cached
+                        deltaOutput = output
+                    } else {
+                        // Normal delta (existing behavior)
+                        deltaInput = max(0, input - (prev?.input ?? 0))
+                        deltaCached = max(0, cached - (prev?.cached ?? 0))
+                        deltaOutput = max(0, output - (prev?.output ?? 0))
+                    }
                     previousTotals = CostUsageCodexTotals(input: input, cached: cached, output: output)
                 } else if let last {
                     deltaInput = max(0, toInt(last["input_tokens"]))

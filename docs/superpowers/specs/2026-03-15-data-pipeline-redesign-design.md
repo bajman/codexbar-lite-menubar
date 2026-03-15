@@ -70,11 +70,12 @@ CodexBar Lite's data pipeline is entirely poll-based with no event-driven mechan
                               │
               ┌───────────────┼───────────────┐
               │               │               │
-    ┌─────────▼──────┐ ┌─────▼──────┐ ┌──────▼──────┐
-    │  UsageStore     │ │ CostStore  │ │ StatusStore │
-    │ (quota snapshots│ │ (token $)  │ │ (provider   │
-    │  reset times)   │ │            │ │  health)    │
-    └────────────────┘ └────────────┘ └─────────────┘
+              ┌─────────────────▼─────────────────┐
+              │            UsageStore               │
+              │  (single @MainActor consumer —      │
+              │   quota snapshots, token costs,     │
+              │   provider health, all in one)      │
+              └─────────────────────────────────────┘
 ```
 
 ### Data Sources (Inputs)
@@ -150,17 +151,28 @@ actor FSEventsWatcher {
         let eventId: FSEventStreamEventId
     }
 
-    /// Start watching a directory tree. Returns a stream of change events.
+    /// Watch multiple directory trees simultaneously. Returns a single merged stream.
+    /// Each directory gets its own FSEventStream internally; events are merged into
+    /// one AsyncStream for the consumer. The stream terminates (yields nil) when
+    /// stopAll() is called or the actor is deallocated.
     func watch(
-        directory: URL,
-        fileExtensions: Set<String>,
+        directories: [(url: URL, fileExtensions: Set<String>)],
         coalescingLatency: TimeInterval = 2.0
     ) -> AsyncStream<[FileChangeEvent]>
 
-    /// Stop watching and clean up.
+    /// Stops all FSEventStreams and terminates the AsyncStream (yields nil).
+    /// Safe to call multiple times. After stopAll(), calling watch() again
+    /// creates a new stream.
     func stopAll()
 }
 ```
+
+**Stream lifecycle contract:**
+- The `AsyncStream` returned by `watch()` yields batched events until `stopAll()` is called.
+- On `stopAll()`, the stream's continuation calls `finish()`, causing the consumer's `for await` loop to exit cleanly.
+- If the actor is deallocated, `deinit` calls `stopAll()` to ensure cleanup.
+- Calling `watch()` after `stopAll()` creates a fresh set of streams and returns a new `AsyncStream`.
+- Each call to `watch()` invalidates any previously returned stream (previous stream finishes).
 
 **Key decisions:**
 - Use `kFSEventStreamCreateFlagFileEvents` for file-level granularity (not just directory-level).
@@ -173,7 +185,7 @@ actor FSEventsWatcher {
 
 **Error handling:**
 - `FSEventStreamCreate` returns `nil` if the directory doesn't exist → watch the parent directory instead and detect creation.
-- If the stream stops delivering events for 30+ minutes without any JSONL writes, trigger a manual rescan (dead stream detection).
+- Dead stream detection: The watcher tracks whether the FSEventStream callback has been invoked at all (for any event, including irrelevant file types) within the last 60 minutes. If zero callbacks fire for 60+ minutes, the stream may be dead — invalidate it and recreate. This is distinct from "no JSONL writes" (which is normal during idle periods). The check is: "has the OS delivered any FSEvents callback at all?" not "have relevant files changed?"
 
 ---
 
@@ -216,38 +228,61 @@ Given: cached entry C, current file F
 
 ---
 
-### 4.3 Three-Layer Deduplication Pipeline
+### 4.3 Provider-Aware Deduplication Pipeline
 
-**Purpose:** Eliminate inflated token counts from Claude's streaming JSONL format.
+**Purpose:** Eliminate inflated token counts from JSONL log entries where the same usage can appear multiple times.
 
-**Current problem:** Deduplication only works when both `messageId` and `requestId` are present. Streaming chunks with missing IDs are counted multiple times.
+**Current problem:** Deduplication only works when both `messageId` and `requestId` are present. Entries with either ID missing are not deduplicated at all.
+
+**Important format distinction:** Claude and Codex JSONL logs have fundamentally different formats:
+- **Claude:** Each `type: "assistant"` entry contains the *final* usage for that message. Multiple entries for the same message arise from streaming log writes (each write has the same cumulative totals). Entries have `message.id` and `requestId` but no `sessionId`.
+- **Codex:** Entries contain `total_token_usage` which is a *running cumulative total* across the entire session. The app computes deltas between consecutive entries. Entries have a `sessionId` from `session_meta`.
+
+The deduplication strategy is therefore provider-specific:
+
+#### Claude Deduplication (two layers)
 
 **Layer 1 — Key-based (existing, corrected):**
 ```
-If messageId AND requestId present:
-    key = "\(messageId):\(requestId)"
+If message.id AND requestId both present:
+    key = "\(message.id):\(requestId)"
     If key in seenKeys → skip
     Else → insert key, process entry
 ```
 
-**Layer 2 — Temporal grouping (new):**
+**Layer 2 — Temporal grouping (new, for entries with missing IDs):**
 ```
-If messageId present but requestId nil (or vice versa):
-    groupKey = "\(sessionId):\(model):\(roundedTimestamp5s)"
+If message.id present but requestId nil (or vice versa):
+    groupKey = "\(filePath):\(model):\(roundedTimestamp5s)"
     Accumulate into temporalGroups[groupKey]
     After file fully parsed, emit MAX token counts per group
 ```
 
-Rationale: Claude streaming chunks emit cumulative token counts. The last chunk in a temporal group has the correct final totals. Taking the maximum handles out-of-order delivery.
+Rationale: When both IDs aren't available, group by file path (which acts as a project/session proxy since Claude logs are per-project), model, and a 5-second time window. Since Claude entries contain final cumulative usage for a message, taking the maximum from a temporal group gives the correct totals even if the same message was logged multiple times.
 
-**Layer 3 — Monotonicity check (new):**
+Note: `filePath` is used instead of `sessionId` because Claude JSONL entries do not have a `sessionId` field. The file path serves as an equivalent grouping key since Claude logs are partitioned by project directory.
+
+#### Codex Deduplication (delta-aware)
+
+Codex uses cumulative `total_token_usage` counters. The existing delta computation (`max(0, current - previous)`) is retained with one fix:
+
+**Counter reset detection (new):**
 ```
-Within each (sessionId, messageId) group:
-    If new entry's inputTokens < previously seen inputTokens for same messageId → skip
-    (Streaming chunks are cumulative; lower counts are earlier partial chunks)
+Given: previousTotals P, currentTotals C
+
+If C.inputTokens < P.inputTokens AND C.outputTokens < P.outputTokens:
+    // Session restarted — counters reset to zero and began a new session.
+    // Treat C as absolute values (not deltas) for this entry.
+    delta = C  (use current totals directly, not max(0, C - P))
+Else:
+    delta = max(0, C - P)  (existing behavior)
+
+Update previousTotals = C
 ```
 
-**Deduplication scope:** Per-file. The `seenKeys` set is built per file parse and merged into the global state. This matches the current architecture where files are parsed independently.
+This fixes Bug 5 (Codex counter reset token loss). The key insight is that a *simultaneous* drop in both input and output counters signals a session restart, whereas a drop in just one counter would indicate a data anomaly (clamped to zero as before).
+
+**Deduplication scope:** Per-file for Claude. Per-session for Codex (since Codex entries reference `sessionId` and deltas span entries). The `seenKeys` set is built per file parse and merged into the global state.
 
 ---
 
@@ -283,37 +318,87 @@ PricingResolver
 
 **Model name resolution chain** (adapted from tokscale):
 
+This replaces the existing `normalizeClaudeModel` (CostUsagePricing.swift lines 179-206) and `normalizeCodexModel` (lines 167-177) functions with a unified resolver. The existing functions are retained as step 3's implementation, extended with the additional resolution steps.
+
 ```
-1. Exact match in pricing table
-2. Alias map: {"claude-sonnet-4-1" → "claude-sonnet-4-1-20250514", ...}
-3. Strip date suffix: "claude-sonnet-4-1-20250514" → "claude-sonnet-4-1"
+1. Exact match in LiteLLM pricing table
+2. Alias map (hardcoded for known short forms):
+   - "claude-sonnet-4-1" → look up with current date suffix
+   - "claude-opus-4-6" → look up with current date suffix
+   (Note: actual date suffixes must be verified against Anthropic's
+    model release documentation at implementation time. The alias map
+    is a static dictionary, not generated.)
+3. Strip date suffix via existing regex: #"-\d{8}$"# (e.g., "-20250514")
 4. Convert Vertex '@' to '-': "claude-opus-4-5@20251101" → "claude-opus-4-5-20251101"
+   (then retry from step 1 with the converted name)
 5. Strip bracket notation: "claude-opus-4-6[1m]" → "claude-opus-4-6"
-6. Provider prefix matching: try "anthropic/", "openai/" prefixes
-7. Fuzzy word-boundary matching (last resort)
+   (then retry from step 1 with the stripped name)
+6. Provider prefix matching: try prepending "anthropic/", "openai/" prefixes
+   (LiteLLM often uses provider-prefixed keys)
+7. Fuzzy word-boundary matching (last resort): split model name on "-" and
+   find the pricing entry with the most matching word segments
 ```
 
 **Tiered pricing fix:**
 
-The 200K token threshold for Sonnet 4.5 must be applied to the *combined* input context:
+The current bug: `CostUsagePricing.claudeCostUSD` (lines 228-254) applies the `tiered()` function independently to each token category (input, cacheRead, cacheCreate, output). This is wrong in two ways:
+1. The 200K threshold should apply to the *combined* input context (input + cacheRead + cacheCreate), not each independently.
+2. Output tokens should *never* use tiered pricing — Anthropic's pricing tiers are based on input context length, not output length.
+
+**Behavioral change note:** This fix will change cost calculations for users whose combined input context exceeds 200K tokens but whose individual token categories do not. Costs will increase slightly for these users (correct behavior). Output costs will decrease slightly for hypothetical cases where output exceeded 200K tokens (which is practically impossible with current context windows but was being overcharged). A one-time cache invalidation on upgrade is required (see Section 8, Phase 3).
+
+**Complete allocation algorithm:**
+
+The 200K threshold is a shared budget consumed by input token categories in this order: (1) regular input tokens, (2) cache creation tokens, (3) cache read tokens. Each category consumes from the remaining budget.
 
 ```swift
 func cost(for usage: TokenUsage, model: String) -> CostResult {
-    let totalInputContext = usage.inputTokens
-        + usage.cacheReadInputTokens
-        + usage.cacheCreationInputTokens
+    guard let pricing = resolve(model: model) else { return .unknown }
+    guard let threshold = pricing.tieredThreshold else {
+        // No tiered pricing for this model — flat rate
+        return .flat(
+            input: usage.inputTokens * pricing.inputCostPerToken,
+            cacheRead: usage.cacheReadInputTokens * pricing.cacheReadCostPerToken,
+            cacheCreate: usage.cacheCreationInputTokens * pricing.cacheCreateCostPerToken,
+            output: usage.outputTokens * pricing.outputCostPerToken
+        )
+    }
 
-    let pricing = resolve(model: model)
+    // Shared budget for the tiered threshold across all input categories.
+    // Categories consume the budget in order: input → cacheCreate → cacheRead.
+    var remainingBudget = threshold  // e.g., 200_000
 
-    // Input tokens: split at threshold
-    let baseInputTokens = min(usage.inputTokens, max(0, pricing.threshold - otherInputTokens))
-    let overageInputTokens = usage.inputTokens - baseInputTokens
+    // 1. Regular input tokens
+    let inputBase = min(usage.inputTokens, remainingBudget)
+    let inputOverage = usage.inputTokens - inputBase
+    remainingBudget -= inputBase
 
-    // Cache tokens: remainder of threshold after input tokens consumed
-    // ... (same split logic)
+    // 2. Cache creation tokens (consume next from remaining budget)
+    let cacheCreateBase = min(usage.cacheCreationInputTokens, remainingBudget)
+    let cacheCreateOverage = usage.cacheCreationInputTokens - cacheCreateBase
+    remainingBudget -= cacheCreateBase
 
-    // Output tokens: NEVER use tiered pricing (output is independent of input context length)
+    // 3. Cache read tokens (consume last from remaining budget)
+    let cacheReadBase = min(usage.cacheReadInputTokens, remainingBudget)
+    let cacheReadOverage = usage.cacheReadInputTokens - cacheReadBase
+    // remainingBudget not needed after this
+
+    // Compute costs: base tokens at base rate, overage at overage rate
+    let inputCost = Double(inputBase) * pricing.inputCostPerToken
+                  + Double(inputOverage) * pricing.inputCostPerTokenAboveThreshold
+    let cacheCreateCost = Double(cacheCreateBase) * pricing.cacheCreateCostPerToken
+                        + Double(cacheCreateOverage) * pricing.cacheCreateCostPerTokenAboveThreshold
+    let cacheReadCost = Double(cacheReadBase) * pricing.cacheReadCostPerToken
+                      + Double(cacheReadOverage) * pricing.cacheReadCostPerTokenAboveThreshold
+
+    // 4. Output tokens: ALWAYS flat rate, never tiered.
+    // Anthropic's pricing documentation specifies tiered pricing for input
+    // context only. Output pricing is independent of input context length.
+    // Citation: https://docs.anthropic.com/en/docs/about-claude/models
     let outputCost = Double(usage.outputTokens) * pricing.outputCostPerToken
+
+    return .tiered(input: inputCost, cacheRead: cacheReadCost,
+                   cacheCreate: cacheCreateCost, output: outputCost)
 }
 ```
 
@@ -330,9 +415,16 @@ func cost(for usage: TokenUsage, model: String) -> CostResult {
 **Implementation:**
 
 ```swift
+/// @MainActor because it interacts with NSWorkspace notifications (which deliver
+/// on main) and needs to coordinate with the DataPipeline actor and
+/// AdaptiveRefreshTimer actor via async calls.
+@MainActor
 final class SystemLifecycleObserver {
     private var activityToken: NSObjectProtocol?
     private var sleepTimestamp: Date?
+    private let pipeline: DataPipeline
+    private let adaptiveTimer: AdaptiveRefreshTimer
+    private let quotaCache: ClaudeCodeQuotaCache
 
     func start() {
         // Prevent App Nap from throttling timers
@@ -343,33 +435,43 @@ final class SystemLifecycleObserver {
 
         let ws = NSWorkspace.shared.notificationCenter
 
-        // Sleep: record timestamp, cancel in-flight requests
-        ws.addObserver(forName: NSWorkspace.willSleepNotification, ...) {
+        // Sleep: record timestamp, cancel in-flight requests.
+        // Notification delivers on main queue → closure is @MainActor-isolated.
+        ws.addObserver(forName: NSWorkspace.willSleepNotification, ...) { [weak self] _ in
+            guard let self else { return }
             self.sleepTimestamp = Date()
-            self.pipeline.cancelInFlightRequests()
-            self.adaptiveTimer.pause()
+            // pipeline and adaptiveTimer are actors — must use Task for async calls
+            Task {
+                await self.pipeline.cancelInFlightRequests()
+                await self.adaptiveTimer.pause()
+            }
         }
 
         // Wake: delayed refresh
-        ws.addObserver(forName: NSWorkspace.didWakeNotification, ...) {
+        ws.addObserver(forName: NSWorkspace.didWakeNotification, ...) { [weak self] _ in
+            guard let self else { return }
             let sleepDuration = Date().timeIntervalSince(self.sleepTimestamp ?? Date())
 
-            // Wait for network interfaces to reconnect
             Task {
-                try await Task.sleep(for: .seconds(sleepDuration > 3600 ? 5 : 3))
-                await self.pipeline.enqueue(.wake, priority: .p0)
-            }
+                // Wait for network interfaces to reconnect
+                try? await Task.sleep(for: .seconds(sleepDuration > 3600 ? 5 : 3))
 
-            // If slept > 1 hour, invalidate all cached quota data
-            if sleepDuration > 3600 {
-                self.quotaCache.invalidateAll()
-            }
+                // If slept > 1 hour, invalidate all cached quota data
+                if sleepDuration > 3600 {
+                    await self.quotaCache.invalidateAll()
+                }
 
-            self.adaptiveTimer.resume()
+                await self.pipeline.enqueue(RefreshRequest(
+                    forceQuota: true,
+                    forceTokenUsage: true,
+                    priority: .p0
+                ))
+                await self.adaptiveTimer.resume()
+            }
         }
 
         // Space switch: dismiss panel (UI concern, forwarded to StatusItemController)
-        ws.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, ...) {
+        ws.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, ...) { _ in
             NotificationCenter.default.post(name: .dismissMenuPanel, object: nil)
         }
     }
@@ -454,10 +556,41 @@ actor AdaptiveRefreshTimer {
 
 **Concurrency governor:**
 
+Bounded concurrency is implemented via a custom `ConcurrencyLimiter` actor (not `AsyncSemaphore`, which does not exist in the Swift standard library). This is a simple actor wrapping a counter and a list of continuations:
+
 ```swift
+/// Custom concurrency limiter. Not a semaphore — uses Swift concurrency
+/// primitives (continuations) rather than OS-level synchronization.
+actor ConcurrencyLimiter {
+    private let limit: Int
+    private var active: Int = 0
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    init(limit: Int) { self.limit = limit }
+
+    func acquire() async {
+        if active < limit {
+            active += 1
+            return
+        }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    func release() {
+        active -= 1
+        if let next = waiters.first {
+            waiters.removeFirst()
+            active += 1
+            next.resume()
+        }
+    }
+}
+
 actor DataPipeline {
-    private let networkSemaphore = AsyncSemaphore(limit: 2)
-    private let fileScanSemaphore = AsyncSemaphore(limit: 1)
+    private let networkLimiter = ConcurrencyLimiter(limit: 2)
+    private let fileScanLimiter = ConcurrencyLimiter(limit: 1)
 
     // Network requests (quota probes, pricing fetch, status check)
     // can run 2 at a time (one per provider).
@@ -468,6 +601,39 @@ actor DataPipeline {
 }
 ```
 
+**RefreshRequest type:**
+
+The existing `RefreshRequestOptions` in `UsageStore.swift` (lines 124-132) has `forceTokenUsage` and `forceStatusChecks`. The pipeline extends this:
+
+```swift
+struct RefreshRequest: Sendable {
+    /// Which providers to refresh. Empty = all enabled providers.
+    var providers: Set<UsageProvider> = []
+
+    /// Force token cost usage recalculation even if cache is fresh.
+    var forceTokenUsage: Bool = false
+
+    /// Force provider status page checks even if cache is fresh.
+    var forceStatusChecks: Bool = false
+
+    /// Force quota probe even if within minimum interval.
+    /// Only respected for P0 (user-initiated) priority.
+    var forceQuota: Bool = false
+
+    /// The priority tier for this request.
+    var priority: Priority = .p2
+
+    enum Priority: Int, Comparable {
+        case p0 = 0  // user/wake
+        case p1 = 1  // fs-event
+        case p2 = 2  // timer
+        case p3 = 3  // background
+
+        static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
+    }
+}
+```
+
 **Coalescing engine:**
 
 ```swift
@@ -475,18 +641,23 @@ struct CoalescingEngine {
     /// Multiple FSEvents within 2 seconds → single batched scan
     func debounce(event: FileChangeEvent, window: Duration = .seconds(2))
 
-    /// Multiple refresh requests while one is in-flight → merge flags
+    /// Multiple refresh requests while one is in-flight → merge flags.
+    /// The merged request takes the highest priority (lowest rawValue)
+    /// and OR's together all force flags.
     func mergeRefreshRequest(_ request: RefreshRequest) {
-        // OR together: forceTokenUsage, forceStatusChecks, forceQuota
         pendingRequest.forceTokenUsage |= request.forceTokenUsage
         pendingRequest.forceStatusChecks |= request.forceStatusChecks
+        pendingRequest.forceQuota |= request.forceQuota
+        pendingRequest.providers.formUnion(request.providers)
+        pendingRequest.priority = min(pendingRequest.priority, request.priority)
     }
 
-    /// Don't probe the same provider twice within minimum interval
+    /// Don't probe the same provider twice within minimum interval.
+    /// Returns true if the request should be skipped.
     func shouldSkip(provider: UsageProvider, kind: FetchKind) -> Bool {
-        // Claude quota: 30s minimum (user-initiated), 60s (background)
-        // Codex quota: same
-        // Cost scan: 10s minimum (FSEvents-triggered), 300s (timer)
+        // Claude quota: 30s minimum (user-initiated / P0), 60s (background / P1-P3)
+        // Codex quota: same intervals
+        // Cost scan: 10s minimum (FSEvents-triggered / P1), 300s (timer / P2-P3)
     }
 }
 ```
@@ -504,6 +675,11 @@ extension DataPipeline {
     }
 
     /// Subscribe to pipeline events. UsageStore consumes this.
+    /// Buffering policy: `.bufferingNewest(20)` — if the @MainActor consumer
+    /// is slow to drain, only the 20 most recent events are kept. Older events
+    /// are dropped. This prevents unbounded memory growth. Since events are
+    /// state snapshots (not deltas), dropping older events is safe — the latest
+    /// event for each provider always contains the current state.
     var events: AsyncStream<PipelineEvent> { get }
 }
 ```
@@ -544,7 +720,7 @@ These bugs from the analysis are directly addressed by the architectural changes
 | 1 | Tiered pricing per-category instead of combined | 4.4 (PricingResolver tiered pricing fix) |
 | 2 | Missing model aliases (sonnet-4-1, opus-4-6[1m]) | 4.4 (model name resolution chain) |
 | 4 | Vertex AI `@` format not normalized | 4.4 (step 4 of resolution chain) |
-| 5 | Codex counter reset token loss | 4.3 (monotonicity check detects resets) |
+| 5 | Codex counter reset token loss | 4.3 (Codex counter reset detection in delta computation) |
 | 7 | Unstable `String(describing:)` for file identity | 4.2 (inode-based identity) |
 | 8 | Date-range pruning evicts valid cache | 4.2 (fingerprint-based cache, no range pruning) |
 | 9 | Deduplication fails with nil messageId/requestId | 4.3 (three-layer deduplication) |
@@ -580,17 +756,33 @@ The analysis identified 30+ UI/UX issues. These are out of scope for this spec b
 
 The redesign is backward-compatible at the `UsageStore` API level. The migration is internal:
 
-**Phase 1:** Add FSEventsWatcher and ContentFingerprintedIncrementalParser alongside existing code. Wire FSEvents into cost scanning but keep the existing timer as primary.
+**Phase 1:** Add FSEventsWatcher and ContentFingerprintedIncrementalParser alongside existing code. Wire FSEvents into cost scanning but keep the existing timer as primary. FSEvents watches `~/.codex/archived_sessions/` in addition to `~/.codex/sessions/` since the existing cost scanner already enumerates archived sessions (see `CostUsageScanner.swift` lines 116-129 where `codexSessionsRoots` includes `archived_sessions`). The overhead is minimal and maintains consistency.
 
 **Phase 2:** Add PricingResolver. Replace hardcoded pricing lookups with resolver calls. Keep hardcoded table as Layer 5 fallback.
 
-**Phase 3:** Add three-layer deduplication to CostUsageScanner+Claude.swift. This is a drop-in replacement for the existing dedup logic.
+**Phase 3:** Add provider-aware deduplication to CostUsageScanner+Claude.swift and CostUsageScanner.swift. This replaces the existing Claude dedup logic and adds counter-reset detection for Codex. **Note:** The improved deduplication will produce different (lower, more accurate) token counts for some users. Trigger a one-time cost usage cache invalidation on first launch after upgrade by incrementing the cache version from `v1` to `v2`. This forces a full reparse of all JSONL files with the corrected deduplication logic. Users will see a brief "Recalculating costs..." state on first launch.
 
 **Phase 4:** Add SystemLifecycleObserver and AdaptiveRefreshTimer. Replace the fixed `Task.sleep` loops in UsageStore.
 
 **Phase 5:** Add DataPipeline coordinator. Rewire UsageStore to consume `AsyncStream<PipelineEvent>` instead of calling fetchers directly. Remove old refresh orchestration code.
 
 **Phase 6:** Remove dead code — old polling loops, old file enumeration in cost scanner (except as P3 safety net), old hardcoded pricing (except as Layer 5 fallback).
+
+### Cache Format Migration
+
+The current `CostUsageFileUsage` struct (in `CostUsageCache.swift`) stores `mtimeUnixMs`, `size`, `parsedBytes`, `lastModel`, `lastTotals`, `sessionId`. The proposed `CachedFileEntry` (Section 4.2) adds `headerFingerprint` and `inodeIdentifier` and renames fields.
+
+**Migration strategy:**
+- The cache file uses a `version` field that is checked on load. Current version: `1`.
+- Phase 1 increments to version `2`. The new format adds `headerFingerprint: Data` and `inodeIdentifier: UInt64`.
+- On load, if `version < 2`: **discard the entire cache** and perform a full reparse. This is safe because:
+  - The full reparse happens once, on first launch after upgrade.
+  - The reparse is bounded in time by Phase 1's integration with FSEvents (subsequent updates are incremental).
+  - No data is lost — the cache is a derived artifact from JSONL source files.
+- The version `2` cache is written atomically after the first full reparse completes.
+- Phase 3's dedup improvement triggers a second version bump to `3`, which again forces a full reparse. To avoid two consecutive full reparses across phases, **Phases 1 and 3 should be deployed together** (single app update) so only one reparse occurs.
+
+**Pricing cache persistence across app updates:** The pricing disk cache at `~/.codexbar/cache/pricing-litellm.json` uses a version-independent path and is preserved across app updates. The cache includes a `fetchedAt` timestamp; the 24-hour TTL ensures stale pricing is refreshed regardless of app version.
 
 ---
 
@@ -622,8 +814,8 @@ The redesign is backward-compatible at the `UsageStore` API level. The migration
 | Metric | Target | Current Baseline |
 |---|---|---|
 | Time from JSONL write to UI update | < 5 seconds | 5-60 minutes |
-| API calls per hour (active use) | < 30 | ~12 (fixed) |
-| API calls per hour (idle) | < 2 | ~12 (fixed, same regardless of activity) |
+| API calls per hour, total across all providers (active use) | < 30 (quota probes only; includes both timer polls at 2min intervals = ~30/hr/provider, minus coalescing when FSEvents-triggered probes replace timer polls within the same minimum interval window) | ~12 (fixed, per provider) |
+| API calls per hour, total across all providers (idle) | < 4 (2 providers × 2 polls/hr at 30min interval) | ~24 (12 per provider, same regardless of activity) |
 | Cost scan CPU time (1000 JSONL files) | < 500ms (incremental) | ~2-5s (full enumeration) |
 | Memory overhead of pricing cache | < 3MB | ~0 (hardcoded) |
 
@@ -648,4 +840,4 @@ The redesign is backward-compatible at the `UsageStore` API level. The migration
 
 2. **Should we persist the pricing disk cache across app updates?** If so, the cache directory should be version-independent. If not, each update gets fresh embedded data and re-fetches on first launch.
 
-3. **Should FSEvents watch `~/.codex/archived_sessions/` too?** These are old sessions unlikely to change, but the cost scanner currently enumerates them. Watching them adds minimal overhead.
+3. ~~**Should FSEvents watch `~/.codex/archived_sessions/` too?**~~ **Resolved:** Yes. The existing cost scanner already enumerates `archived_sessions` (see `CostUsageScanner.swift` lines 116-129). FSEvents should watch it for consistency. The overhead is minimal.

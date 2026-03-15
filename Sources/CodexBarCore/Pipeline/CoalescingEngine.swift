@@ -43,4 +43,9 @@ struct CoalescingEngine: Sendable {
     mutating func recordCompletion(provider: UsageProvider, kind: FetchKind) {
         lastCompletion["\(provider):\(kind)"] = Date()
     }
+
+    /// Whether a pending request exists (without draining it).
+    var hasPending: Bool {
+        pendingRequest != nil
+    }
 }

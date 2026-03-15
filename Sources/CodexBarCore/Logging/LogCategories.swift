@@ -40,6 +40,7 @@ public enum LogCategories {
     public static let notifications = "notifications"
     public static let openAIWeb = "openai-web"
     public static let openAIWebview = "openai-webview"
+    public static let dataPipeline = "data-pipeline"
     public static let ollama = "ollama"
     public static let opencodeUsage = "opencode-usage"
     public static let openRouterUsage = "openrouter-usage"

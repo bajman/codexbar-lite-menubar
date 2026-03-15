@@ -24,6 +24,7 @@ public actor DataPipeline {
 
     private var continuation: AsyncStream<PipelineEvent>.Continuation?
     private var processingTask: Task<Void, Never>?
+    private var safetyNetTask: Task<Void, Never>?
     private var inFlightTasks: [Task<Void, Never>] = []
 
     /// Signal mechanism: a continuation that the processing loop awaits,
@@ -59,6 +60,16 @@ public actor DataPipeline {
         processingTask = Task { [weak self] in
             await self?.runProcessingLoop()
         }
+        safetyNetTask = Task.detached(priority: .background) { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(3600))
+                guard let self else { return }
+                await self.enqueue(RefreshRequest(
+                    forceTokenUsage: true,
+                    priority: .p3
+                ))
+            }
+        }
     }
 
     /// Enqueue a refresh request. The request is merged with any pending
@@ -90,6 +101,8 @@ public actor DataPipeline {
         isShutDown = true
         processingTask?.cancel()
         processingTask = nil
+        safetyNetTask?.cancel()
+        safetyNetTask = nil
         cancelInFlightRequests()
         // Wake any waiting signal so the loop can exit.
         if let signal = signalContinuation {

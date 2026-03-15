@@ -42,14 +42,14 @@ private func fsEventsCallback(
 
 /// Actor that wraps the macOS FSEvents C API to watch directory trees for file changes,
 /// emitting filtered, coalesced events via AsyncStream.
-actor FSEventsWatcher {
+public actor FSEventsWatcher {
 
     // MARK: - Public types
 
-    struct FileChangeEvent: Sendable {
-        let path: String
-        let flags: FSEventStreamEventFlags
-        let eventId: FSEventStreamEventId
+    public struct FileChangeEvent: Sendable {
+        public let path: String
+        public let flags: FSEventStreamEventFlags
+        public let eventId: FSEventStreamEventId
     }
 
     // MARK: - Internal raw event type (used by C callback bridge)
@@ -80,6 +80,8 @@ actor FSEventsWatcher {
     /// UserDefaults key prefix for persisting last event IDs
     private let lastEventIdKeyBase = "FSEventsWatcher.lastEventId"
 
+    public init() {}
+
     // MARK: - Public interface
 
     /// Watch a set of directories, emitting batched file-change events on the returned AsyncStream.
@@ -87,7 +89,7 @@ actor FSEventsWatcher {
     ///   - directories: Array of `(url:, fileExtensions:)` tuples. Pass an empty `fileExtensions`
     ///     set to watch all extensions in that directory.
     ///   - coalescingLatency: How long to buffer rapid events before emitting them (default 2 s).
-    func watch(
+    public func watch(
         directories: [(url: URL, fileExtensions: Set<String>)],
         coalescingLatency: TimeInterval = 2.0
     ) -> AsyncStream<[FileChangeEvent]> {
@@ -152,7 +154,7 @@ actor FSEventsWatcher {
     }
 
     /// Stop all active FSEvent streams and finish all AsyncStreams.
-    func stopAll() {
+    public func stopAll() {
         for entry in entries {
             entry.flushTask?.cancel()
             FSEventStreamStop(entry.stream)

@@ -242,6 +242,23 @@ final class UsageStore {
     @ObservationIgnored private let statusFetchBaseBackoff: TimeInterval = 60
     @ObservationIgnored private let statusFetchMaxBackoff: TimeInterval = 30 * 60
 
+    // MARK: - Data Pipeline
+
+    /// The data pipeline coordinator (nil until started).
+    @ObservationIgnored private var pipeline: DataPipeline?
+
+    /// The pipeline event subscription task.
+    @ObservationIgnored private var pipelineSubscription: Task<Void, Never>?
+
+    /// The FSEvents watcher for JSONL file changes.
+    @ObservationIgnored private var fsEventsWatcher: FSEventsWatcher?
+
+    /// The adaptive refresh timer.
+    @ObservationIgnored private var adaptiveTimer: AdaptiveRefreshTimer?
+
+    /// The system lifecycle observer.
+    @ObservationIgnored private var systemLifecycleObserver: SystemLifecycleObserver?
+
     init(
         fetcher: UsageFetcher,
         browserDetection: BrowserDetection,
@@ -299,6 +316,7 @@ final class UsageStore {
         Task { await self.refresh() }
         self.startTimer()
         self.startTokenTimer()
+        self.startPipeline()
     }
 
     /// Returns the login method (plan type) for the specified provider, if available.
@@ -596,10 +614,153 @@ final class UsageStore {
         }
     }
 
+    // MARK: - Data Pipeline Integration
+
+    /// Subscribe to the DataPipeline event stream and update UI state reactively.
+    private func subscribeToPipeline() {
+        guard let pipeline else { return }
+        pipelineSubscription?.cancel()
+        pipelineSubscription = Task { [weak self] in
+            let events = pipeline.events
+            for await event in events {
+                guard let self else { return }
+                switch event {
+                case .quotaUpdated(let provider, let snapshot):
+                    self.snapshots[provider] = snapshot
+                    self.errors[provider] = nil
+                case .costUpdated(let provider, let costSnapshot):
+                    self.tokenSnapshots[provider] = costSnapshot
+                    self.tokenErrors[provider] = nil
+                case .error(let provider, let error):
+                    // Only surface errors if we don't have cached data
+                    if self.snapshots[provider] == nil {
+                        self.errors[provider] = error.localizedDescription
+                    }
+                case .pricingRefreshed:
+                    break // informational
+                }
+            }
+        }
+    }
+
+    /// Start the data pipeline (called alongside the legacy timer).
+    func startPipeline() {
+        let pricingResolver = PricingResolver(networkEnabled: true)
+        let pipeline = DataPipeline(pricingResolver: pricingResolver)
+        self.pipeline = pipeline
+        subscribeToPipeline()
+
+        // 1. FSEvents watcher
+        let watcher = FSEventsWatcher()
+        self.fsEventsWatcher = watcher
+        let adaptiveTimer = AdaptiveRefreshTimer()
+        self.adaptiveTimer = adaptiveTimer
+
+        Task {
+            // Determine watch directories
+            let homeDir = URL(fileURLWithPath: NSHomeDirectory())
+            var watchDirs: [(url: URL, fileExtensions: Set<String>)] = []
+
+            let claudeProjects = homeDir.appending(path: ".claude/projects")
+            if FileManager.default.fileExists(atPath: claudeProjects.path) {
+                watchDirs.append((url: claudeProjects, fileExtensions: ["jsonl"]))
+            }
+            let codexSessions = homeDir.appending(path: ".codex/sessions")
+            if FileManager.default.fileExists(atPath: codexSessions.path) {
+                watchDirs.append((url: codexSessions, fileExtensions: ["jsonl"]))
+            }
+
+            guard !watchDirs.isEmpty else { return }
+
+            let stream = await watcher.watch(
+                directories: watchDirs,
+                coalescingLatency: 2.0
+            )
+
+            // FSEvents -> pipeline bridge
+            for await batch in stream {
+                let hasJsonl = batch.contains { $0.path.hasSuffix(".jsonl") }
+                if hasJsonl {
+                    await adaptiveTimer.recordFSEvent()
+                    await pipeline.enqueue(RefreshRequest(
+                        forceTokenUsage: true,
+                        priority: .p1
+                    ))
+                }
+            }
+        }
+
+        // 2. Adaptive polling loop
+        Task.detached(priority: .utility) { [weak self] in
+            while !Task.isCancelled {
+                await adaptiveTimer.evaluateState()
+                let interval = await adaptiveTimer.currentInterval
+                try? await Task.sleep(for: interval)
+                let paused = await adaptiveTimer.isPaused
+                guard !paused else { continue }
+                guard self != nil else { return }
+                await pipeline.enqueue(RefreshRequest(priority: .p2))
+            }
+        }
+
+        // 3. System lifecycle observer
+        let lifecycle = SystemLifecycleObserver(
+            onWake: { [weak pipeline, weak adaptiveTimer] _ in
+                await pipeline?.enqueue(RefreshRequest(
+                    forceQuota: true,
+                    forceTokenUsage: true,
+                    priority: .p0
+                ))
+                await adaptiveTimer?.resume()
+            },
+            onSleep: { [weak pipeline, weak adaptiveTimer] in
+                await pipeline?.cancelInFlightRequests()
+                await adaptiveTimer?.pause()
+            },
+            onSpaceChange: { }  // Panel dismiss handled elsewhere
+        )
+        lifecycle.start()
+        self.systemLifecycleObserver = lifecycle
+    }
+
+    /// Stop the data pipeline.
+    func stopPipeline() {
+        pipelineSubscription?.cancel()
+        pipelineSubscription = nil
+
+        if let pipeline {
+            Task { await pipeline.shutdown() }
+        }
+        pipeline = nil
+
+        if let watcher = fsEventsWatcher {
+            Task { await watcher.stopAll() }
+        }
+        fsEventsWatcher = nil
+
+        systemLifecycleObserver?.stop()
+        systemLifecycleObserver = nil
+
+        adaptiveTimer = nil
+    }
+
+    /// Enqueue a user-initiated refresh into the pipeline.
+    func refreshViaPipeline() {
+        guard let pipeline else { return }
+        Task {
+            await pipeline.enqueue(RefreshRequest(
+                forceQuota: true,
+                forceTokenUsage: true,
+                priority: .p0
+            ))
+        }
+    }
+
     deinit {
         self.timerTask?.cancel()
         self.tokenTimerTask?.cancel()
         self.tokenRefreshSequenceTask?.cancel()
+        self.pipelineSubscription?.cancel()
     }
 
     enum SessionQuotaWindowSource: String {

@@ -3,12 +3,12 @@ import Foundation
 
 /// Central coordinator that accepts RefreshRequests, coalesces them,
 /// limits concurrency, calls provider fetchers, and emits PipelineEvents.
-actor DataPipeline {
+public actor DataPipeline {
 
     // MARK: - Types
 
     /// Events emitted by the pipeline for UsageStore consumption.
-    enum PipelineEvent: Sendable {
+    public enum PipelineEvent: Sendable {
         case quotaUpdated(UsageProvider, UsageSnapshot)
         case costUpdated(UsageProvider, CostUsageTokenSnapshot)
         case error(UsageProvider, any Error)
@@ -39,10 +39,10 @@ actor DataPipeline {
 
     /// The event stream. UsageStore subscribes to this.
     /// Uses .bufferingNewest(20) — stale events are dropped.
-    nonisolated let events: AsyncStream<PipelineEvent>
+    public nonisolated let events: AsyncStream<PipelineEvent>
 
     /// Create a pipeline. Call `start()` to begin the processing loop.
-    init(pricingResolver: PricingResolver) {
+    public init(pricingResolver: PricingResolver) {
         self.pricingResolver = pricingResolver
 
         let (stream, cont) = AsyncStream<PipelineEvent>.makeStream(
@@ -53,7 +53,7 @@ actor DataPipeline {
     }
 
     /// Start the processing loop. Safe to call multiple times (only starts once).
-    func start() {
+    public func start() {
         guard !isStarted, !isShutDown else { return }
         isStarted = true
         processingTask = Task { [weak self] in
@@ -63,7 +63,7 @@ actor DataPipeline {
 
     /// Enqueue a refresh request. The request is merged with any pending
     /// request via CoalescingEngine. Automatically starts the pipeline if needed.
-    func enqueue(_ request: RefreshRequest) {
+    public func enqueue(_ request: RefreshRequest) {
         guard !isShutDown else { return }
         if !isStarted { start() }
         coalescing.mergeRefreshRequest(request)
@@ -76,7 +76,7 @@ actor DataPipeline {
     }
 
     /// Cancel all in-flight network requests (called on sleep).
-    func cancelInFlightRequests() {
+    public func cancelInFlightRequests() {
         for task in inFlightTasks {
             task.cancel()
         }
@@ -85,7 +85,7 @@ actor DataPipeline {
     }
 
     /// Shut down the pipeline (stop processing loop, finish event stream).
-    func shutdown() {
+    public func shutdown() {
         guard !isShutDown else { return }
         isShutDown = true
         processingTask?.cancel()

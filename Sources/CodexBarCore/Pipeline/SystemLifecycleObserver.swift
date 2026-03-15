@@ -4,7 +4,7 @@ import Foundation
 
 /// Handles sleep/wake, App Nap prevention, and Space switch.
 @MainActor
-final class SystemLifecycleObserver {
+public final class SystemLifecycleObserver {
     private var activityToken: NSObjectProtocol?
     private var observers: [NSObjectProtocol] = []
     private var sleepTimestamp: Date?
@@ -13,7 +13,7 @@ final class SystemLifecycleObserver {
     private let onSleep: @Sendable () async -> Void
     private let onSpaceChange: @MainActor () -> Void
 
-    init(
+    public init(
         onWake: @escaping @Sendable (_ sleepDuration: TimeInterval) async -> Void,
         onSleep: @escaping @Sendable () async -> Void,
         onSpaceChange: @escaping @MainActor () -> Void
@@ -23,7 +23,7 @@ final class SystemLifecycleObserver {
         self.onSpaceChange = onSpaceChange
     }
 
-    func start() {
+    public func start() {
         activityToken = ProcessInfo.processInfo.beginActivity(
             options: .userInitiatedAllowingIdleSystemSleep,
             reason: "CodexBar usage monitoring"
@@ -62,7 +62,7 @@ final class SystemLifecycleObserver {
         })
     }
 
-    func stop() {
+    public func stop() {
         let ws = NSWorkspace.shared.notificationCenter
         for observer in observers { ws.removeObserver(observer) }
         observers.removeAll()

@@ -723,7 +723,7 @@ These bugs from the analysis are directly addressed by the architectural changes
 | 5 | Codex counter reset token loss | 4.3 (Codex counter reset detection in delta computation) |
 | 7 | Unstable `String(describing:)` for file identity | 4.2 (inode-based identity) |
 | 8 | Date-range pruning evicts valid cache | 4.2 (fingerprint-based cache, no range pruning) |
-| 9 | Deduplication fails with nil messageId/requestId | 4.3 (three-layer deduplication) |
+| 9 | Deduplication fails with nil messageId/requestId | 4.3 (provider-aware deduplication: Claude two-layer + Codex delta-aware) |
 | 11 | Directory mtime optimization skips modified files | 4.1 (FSEvents replaces mtime checks) |
 | 12 | File rotation corrupts incremental parsing | 4.2 (content fingerprinting) |
 | 14 | Empty file in skip path leaves stale cache | 4.2 (size=0 triggers cache eviction) |
@@ -838,6 +838,6 @@ The current `CostUsageFileUsage` struct (in `CostUsageCache.swift`) stores `mtim
 
 1. **Should the adaptive timer be user-configurable?** The current `refreshFrequency` setting maps to a fixed interval. Options: (a) keep it as an override for the P2 tier, (b) replace it with an "Aggressive / Balanced / Conservative" selector, (c) remove it entirely and let the adaptive timer handle everything.
 
-2. **Should we persist the pricing disk cache across app updates?** If so, the cache directory should be version-independent. If not, each update gets fresh embedded data and re-fetches on first launch.
+2. ~~**Should we persist the pricing disk cache across app updates?**~~ **Resolved:** Yes. The pricing cache at `~/.codexbar/cache/pricing-litellm.json` uses a version-independent path and is preserved across app updates (see Section 8, Cache Format Migration).
 
 3. ~~**Should FSEvents watch `~/.codex/archived_sessions/` too?**~~ **Resolved:** Yes. The existing cost scanner already enumerates `archived_sessions` (see `CostUsageScanner.swift` lines 116-129). FSEvents should watch it for consistency. The overhead is minimal.

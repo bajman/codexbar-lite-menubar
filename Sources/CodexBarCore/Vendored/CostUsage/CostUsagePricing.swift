@@ -225,32 +225,39 @@ enum CostUsagePricing {
         let key = self.normalizeClaudeModel(model)
         guard let pricing = self.claude[key] else { return nil }
 
-        func tiered(_ tokens: Int, base: Double, above: Double?, threshold: Int?) -> Double {
-            guard let threshold, let above else { return Double(tokens) * base }
-            let below = min(tokens, threshold)
-            let over = max(tokens - threshold, 0)
-            return Double(below) * base + Double(over) * above
+        // If no tiered pricing, use flat rates
+        guard let threshold = pricing.thresholdTokens else {
+            return Double(max(0, inputTokens)) * pricing.inputCostPerToken
+                 + Double(max(0, cacheReadInputTokens)) * pricing.cacheReadInputCostPerToken
+                 + Double(max(0, cacheCreationInputTokens)) * pricing.cacheCreationInputCostPerToken
+                 + Double(max(0, outputTokens)) * pricing.outputCostPerToken
         }
 
-        return tiered(
-            max(0, inputTokens),
-            base: pricing.inputCostPerToken,
-            above: pricing.inputCostPerTokenAboveThreshold,
-            threshold: pricing.thresholdTokens)
-            + tiered(
-                max(0, cacheReadInputTokens),
-                base: pricing.cacheReadInputCostPerToken,
-                above: pricing.cacheReadInputCostPerTokenAboveThreshold,
-                threshold: pricing.thresholdTokens)
-            + tiered(
-                max(0, cacheCreationInputTokens),
-                base: pricing.cacheCreationInputCostPerToken,
-                above: pricing.cacheCreationInputCostPerTokenAboveThreshold,
-                threshold: pricing.thresholdTokens)
-            + tiered(
-                max(0, outputTokens),
-                base: pricing.outputCostPerToken,
-                above: pricing.outputCostPerTokenAboveThreshold,
-                threshold: pricing.thresholdTokens)
+        // Shared budget: threshold is consumed across input categories in order:
+        // input → cacheCreation → cacheRead
+        var remainingBudget = threshold
+
+        let inputBase = min(max(0, inputTokens), remainingBudget)
+        let inputOverage = max(0, inputTokens) - inputBase
+        remainingBudget -= inputBase
+
+        let cacheCreateBase = min(max(0, cacheCreationInputTokens), remainingBudget)
+        let cacheCreateOverage = max(0, cacheCreationInputTokens) - cacheCreateBase
+        remainingBudget -= cacheCreateBase
+
+        let cacheReadBase = min(max(0, cacheReadInputTokens), remainingBudget)
+        let cacheReadOverage = max(0, cacheReadInputTokens) - cacheReadBase
+
+        let inputCost = Double(inputBase) * pricing.inputCostPerToken
+                      + Double(inputOverage) * (pricing.inputCostPerTokenAboveThreshold ?? pricing.inputCostPerToken)
+        let cacheCreateCost = Double(cacheCreateBase) * pricing.cacheCreationInputCostPerToken
+                            + Double(cacheCreateOverage) * (pricing.cacheCreationInputCostPerTokenAboveThreshold ?? pricing.cacheCreationInputCostPerToken)
+        let cacheReadCost = Double(cacheReadBase) * pricing.cacheReadInputCostPerToken
+                          + Double(cacheReadOverage) * (pricing.cacheReadInputCostPerTokenAboveThreshold ?? pricing.cacheReadInputCostPerToken)
+
+        // Output tokens: NEVER use tiered pricing — pricing tiers are input-context-dependent only.
+        let outputCost = Double(max(0, outputTokens)) * pricing.outputCostPerToken
+
+        return inputCost + cacheCreateCost + cacheReadCost + outputCost
     }
 }

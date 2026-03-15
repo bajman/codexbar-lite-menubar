@@ -6,6 +6,10 @@ This repository is a fork of the original [steipete/CodexBar](https://github.com
 credit should be front and center: the core product idea, menu bar interface, and original CodexBar foundation
 come from Peter Steinberger's upstream project.
 
+<p align="center">
+  <img src="docs/codexbar-screenshot.png" width="329" alt="CodexBar Lite menu bar panel showing Codex session, weekly usage, credits, and cost tracking">
+</p>
+
 ## Upstream Credit
 
 - original project: [steipete/CodexBar](https://github.com/steipete/CodexBar)

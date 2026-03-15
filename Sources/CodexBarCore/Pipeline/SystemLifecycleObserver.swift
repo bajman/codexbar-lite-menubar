@@ -36,9 +36,11 @@ public final class SystemLifecycleObserver {
             object: nil, queue: .main
         ) { [weak self] _ in
             guard let self else { return }
-            self.sleepTimestamp = Date()
             let onSleep = self.onSleep
-            Task { await onSleep() }
+            Task { @MainActor in
+                self.sleepTimestamp = Date()
+                await onSleep()
+            }
         })
 
         observers.append(ws.addObserver(
@@ -46,9 +48,9 @@ public final class SystemLifecycleObserver {
             object: nil, queue: .main
         ) { [weak self] _ in
             guard let self else { return }
-            let duration = Date().timeIntervalSince(self.sleepTimestamp ?? Date())
             let onWake = self.onWake
-            Task {
+            Task { @MainActor in
+                let duration = Date().timeIntervalSince(self.sleepTimestamp ?? Date())
                 try? await Task.sleep(for: .seconds(duration > 3600 ? 5 : 3))
                 await onWake(duration)
             }
@@ -58,7 +60,8 @@ public final class SystemLifecycleObserver {
             forName: NSWorkspace.activeSpaceDidChangeNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
-            self?.onSpaceChange()
+            let onSpaceChange = self?.onSpaceChange
+            Task { @MainActor in onSpaceChange?() }
         })
     }
 

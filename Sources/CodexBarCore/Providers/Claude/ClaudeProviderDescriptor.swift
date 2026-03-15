@@ -22,7 +22,7 @@ public enum ClaudeProviderDescriptor {
                 isPrimaryProvider: true,
                 usesAccountFallback: false,
                 browserCookieOrder: nil,
-                dashboardURL: "https://console.anthropic.com/settings/billing",
+                dashboardURL: "https://console.anthropic.com/settings/usage",
                 subscriptionDashboardURL: "https://claude.ai/settings/usage",
                 statusPageURL: "https://status.claude.com/"),
             branding: ProviderBranding(

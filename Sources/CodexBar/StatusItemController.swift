@@ -541,6 +541,10 @@ final class StatusItemController: NSObject, StatusItemControlling, MenuPanelActi
         self.panelController?.dismiss()
     }
 
+    func requestPanelResize() {
+        self.panelController?.updateContent()
+    }
+
     // MARK: - MenuPanelActions conformance
 
     func runSwitchAccount(provider: UsageProvider) {

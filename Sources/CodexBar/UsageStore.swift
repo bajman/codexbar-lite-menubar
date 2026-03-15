@@ -314,6 +314,9 @@ final class UsageStore {
             }
         }
         Task { await self.refresh() }
+        // TODO: [Pipeline Migration] Remove startTimer() and legacy refresh loop
+        // once DataPipeline has been validated in production. The pipeline (startPipeline)
+        // runs alongside the legacy system during the transition period.
         self.startTimer()
         self.startTokenTimer()
         self.startPipeline()

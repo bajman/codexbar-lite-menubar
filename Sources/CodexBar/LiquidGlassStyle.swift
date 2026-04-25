@@ -8,40 +8,41 @@ enum MenuPanelMetrics {
 
     static let shellCornerRadius: CGFloat = 16
     static let shellHorizontalPadding: CGFloat = 12
-    static let shellTopPadding: CGFloat = 8
+    static let shellTopPadding: CGFloat = 12
     static let shellBottomPadding: CGFloat = 12
     static let panelAttachmentGap: CGFloat = 12
     static let screenEdgeInset: CGFloat = 12
 
     // MARK: - Inner Surfaces
 
-    static let cardCornerRadius: CGFloat = 12
-    static let sectionCornerRadius: CGFloat = 12
-    static let contentHorizontalPadding: CGFloat = 16
+    static let cardCornerRadius: CGFloat = 14
+    static let sectionCornerRadius: CGFloat = 14
+    static let contentHorizontalPadding: CGFloat = 18
     static let cardTopPadding: CGFloat = 16
     static let cardBottomPadding: CGFloat = 16
-    static let compactSurfacePadding: CGFloat = 8
-    static let chartSurfacePadding: CGFloat = 12
+    static let compactSurfacePadding: CGFloat = 10
+    static let chartSurfacePadding: CGFloat = 14
     static let footerBottomPadding: CGFloat = shellBottomPadding
 
     // MARK: - Section Spacing
 
-    static let compactSpacing: CGFloat = 4
-    static let sectionSpacing: CGFloat = 8
-    static let chartSectionSpacing: CGFloat = 12
-    static let metricRowSpacing: CGFloat = 8
-    static let headerSpacing: CGFloat = 4
-    static let inlineSpacing: CGFloat = 8
+    static let compactSpacing: CGFloat = 6
+    static let sectionSpacing: CGFloat = 10
+    static let chartSectionSpacing: CGFloat = 14
+    static let metricRowSpacing: CGFloat = 10
+    static let headerSpacing: CGFloat = 6
+    static let inlineSpacing: CGFloat = 10
 
     // MARK: - Chart Disclosure
 
     static let disclosureHorizontalPadding: CGFloat = 16
-    static let disclosureVerticalPadding: CGFloat = 8
+    static let disclosureVerticalPadding: CGFloat = 10
 
     // MARK: - Action Buttons
 
     static let actionIconWidth: CGFloat = 24
-    static let actionVerticalPadding: CGFloat = 8
+    static let actionHorizontalPadding: CGFloat = contentHorizontalPadding
+    static let actionVerticalPadding: CGFloat = 10
     static let chipHorizontalPadding: CGFloat = 8
     static let chipVerticalPadding: CGFloat = 4
 
@@ -192,26 +193,26 @@ private struct MenuContentSurface: ViewModifier {
         if self.isGlassActive {
             switch (self.prominence, self.colorScheme) {
             case (.regular, .dark):
-                return base.opacity(0.78)
+                return base.opacity(0.56)
             case (.regular, .light):
-                return base.opacity(0.62)
+                return base.opacity(0.40)
             case (.subtle, .dark):
-                return base.opacity(0.62)
+                return base.opacity(0.42)
             case (.subtle, .light):
-                return base.opacity(0.46)
+                return base.opacity(0.28)
             @unknown default:
-                return base.opacity(0.62)
+                return base.opacity(0.40)
             }
         }
 
-        return base.opacity(self.prominence == .regular ? 0.96 : 0.84)
+        return base.opacity(self.prominence == .regular ? 0.90 : 0.76)
     }
 
     private var strokeColor: Color {
         if self.reduceTransparency {
             return Color(nsColor: .separatorColor).opacity(0.55)
         }
-        return Color(nsColor: .separatorColor).opacity(self.isGlassActive ? 0.4 : 0.24)
+        return Color(nsColor: .separatorColor).opacity(self.isGlassActive ? 0.30 : 0.18)
     }
 
     private var strokeWidth: CGFloat {
@@ -220,15 +221,15 @@ private struct MenuContentSurface: ViewModifier {
 
     private var shadowColor: Color {
         guard self.isGlassActive, !self.reduceTransparency else { return .clear }
-        return Color.black.opacity(self.prominence == .regular ? 0.12 : 0.08)
+        return Color.black.opacity(self.prominence == .regular ? 0.08 : 0.05)
     }
 
     private var shadowRadius: CGFloat {
-        self.prominence == .regular ? 14 : 10
+        self.prominence == .regular ? 18 : 12
     }
 
     private var shadowYOffset: CGFloat {
-        self.prominence == .regular ? 6 : 4
+        self.prominence == .regular ? 10 : 6
     }
 }
 

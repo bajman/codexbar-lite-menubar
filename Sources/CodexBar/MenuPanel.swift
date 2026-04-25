@@ -5,12 +5,10 @@ final class MenuPanel: NSPanel {
     init(contentRect: NSRect) {
         super.init(
             contentRect: contentRect,
-            styleMask: [.titled, .nonactivatingPanel, .fullSizeContentView],
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: true)
         self.level = .statusBar
-        self.titlebarAppearsTransparent = true
-        self.titleVisibility = .hidden
         self.isMovable = false
         self.isOpaque = false
         self.backgroundColor = .clear

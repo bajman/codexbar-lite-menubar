@@ -58,35 +58,27 @@ struct MenuPanelContentView: View {
         MenuPanelMetrics.contentWidth(for: self.cardWidth)
     }
 
-    /// Maximum panel height: leave room for the menu bar and a small margin.
-    private var maxPanelHeight: CGFloat {
-        guard let screen = NSScreen.main else { return 800 }
-        return screen.visibleFrame.height - 20
-    }
-
     var body: some View {
         let enabledProviders = self.store.enabledProviders()
-        let content = ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: MenuPanelMetrics.sectionSpacing) {
-                if self.shouldMergeIcons, enabledProviders.count > 1 {
-                    self.switcherSection(enabledProviders: enabledProviders)
-                }
-
-                self.cardSection(enabledProviders: enabledProviders)
-
-                self.chartSection(enabledProviders: enabledProviders)
-
-                Divider()
-
-                self.actionSection(enabledProviders: enabledProviders)
+        let content = VStack(spacing: MenuPanelMetrics.sectionSpacing) {
+            if self.shouldMergeIcons, enabledProviders.count > 1 {
+                self.switcherSection(enabledProviders: enabledProviders)
             }
-            .padding(.horizontal, MenuPanelMetrics.shellHorizontalPadding)
-            .padding(.top, MenuPanelMetrics.shellTopPadding)
-            .padding(.bottom, MenuPanelMetrics.shellBottomPadding)
+
+            self.cardSection(enabledProviders: enabledProviders)
+
+            self.chartSection(enabledProviders: enabledProviders)
+
+            Divider()
+
+            self.actionSection(enabledProviders: enabledProviders)
         }
+        .padding(.horizontal, MenuPanelMetrics.shellHorizontalPadding)
+        .padding(.top, MenuPanelMetrics.shellTopPadding)
+        .padding(.bottom, MenuPanelMetrics.shellBottomPadding)
         .frame(width: self.cardWidth)
-        .frame(maxHeight: self.maxPanelHeight)
-        .menuGlassBackground(layer: .shell, cornerRadius: MenuPanelMetrics.shellCornerRadius, skipGlassEffect: true)
+        .fixedSize(horizontal: false, vertical: true)
+        .menuGlassBackground(layer: .shell, cornerRadius: MenuPanelMetrics.shellCornerRadius)
         .onChange(of: self.expandedChart) { _, _ in
             // Give SwiftUI a frame to lay out the expanded/collapsed content,
             // then ask the panel controller to resize to fit.
@@ -95,17 +87,7 @@ struct MenuPanelContentView: View {
             }
         }
 
-        #if DEBUG
         content
-            .overlay(alignment: .topLeading) {
-                Circle()
-                    .fill(self.isActive ? Color.green : Color.red)
-                    .frame(width: 8, height: 8)
-                    .padding(6)
-            }
-        #else
-        content
-        #endif
     }
 
     // MARK: - Provider Switcher
@@ -394,7 +376,7 @@ struct MenuPanelContentView: View {
                 Spacer()
             }
             .font(.subheadline)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, MenuPanelMetrics.actionHorizontalPadding)
             .padding(.vertical, MenuPanelMetrics.actionVerticalPadding)
             .contentShape(Rectangle())
         }

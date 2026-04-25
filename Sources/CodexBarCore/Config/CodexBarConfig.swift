@@ -3,12 +3,36 @@ import Foundation
 public struct CodexBarConfig: Codable, Sendable {
     public static let currentVersion = 1
 
+    private enum CodingKeys: String, CodingKey {
+        case version
+        case providers
+    }
+
+    private struct LossyProviderConfig: Decodable {
+        let value: ProviderConfig?
+
+        init(from decoder: Decoder) throws {
+            do {
+                self.value = try ProviderConfig(from: decoder)
+            } catch ProviderConfigDecodeError.unsupportedProviderID {
+                self.value = nil
+            }
+        }
+    }
+
     public var version: Int
     public var providers: [ProviderConfig]
 
     public init(version: Int = Self.currentVersion, providers: [ProviderConfig]) {
         self.version = version
         self.providers = providers
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.version = try container.decodeIfPresent(Int.self, forKey: .version) ?? Self.currentVersion
+        let providers = try container.decodeIfPresent([LossyProviderConfig].self, forKey: .providers) ?? []
+        self.providers = providers.compactMap(\.value)
     }
 
     public static func makeDefault(
@@ -131,7 +155,11 @@ public struct ProviderConfig: Codable, Sendable, Identifiable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.id = try container.decode(UsageProvider.self, forKey: .id)
+        let rawID = try container.decode(String.self, forKey: .id)
+        guard let id = UsageProvider(rawValue: rawID) else {
+            throw ProviderConfigDecodeError.unsupportedProviderID(rawID)
+        }
+        self.id = id
         self.enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled)
         self.source = try container.decodeIfPresent(ProviderSourceMode.self, forKey: .source)
         // Decode legacy fields for forward/backward compatibility but drop values immediately.
@@ -192,4 +220,8 @@ public struct ProviderConfig: Codable, Sendable, Identifiable {
         value = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
     }
+}
+
+private enum ProviderConfigDecodeError: Error {
+    case unsupportedProviderID(String)
 }

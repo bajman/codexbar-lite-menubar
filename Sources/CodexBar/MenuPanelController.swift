@@ -6,7 +6,6 @@ import SwiftUI
 final class MenuPanelController {
     private var panel: MenuPanel?
     private var hostingView: NSHostingView<AnyView>?
-    private var glassView: NSGlassEffectView?
     private nonisolated(unsafe) var globalClickMonitor: Any?
     private nonisolated(unsafe) var localClickMonitor: Any?
     private nonisolated(unsafe) var localKeyMonitor: Any?
@@ -42,9 +41,8 @@ final class MenuPanelController {
             self.panel = panel
         }
 
-        let contentView = self.wrapInGlassIfNeeded(hosting)
-        if panel.contentView !== contentView {
-            panel.contentView = contentView
+        if panel.contentView !== hosting {
+            panel.contentView = hosting
         }
 
         let origin = self.panelOrigin(relativeTo: button, panelSize: fittingSize)
@@ -92,9 +90,8 @@ final class MenuPanelController {
         guard self.isShowing, let panel = self.panel else { return }
         let content = self.contentBuilder()
         let hosting = self.hostingView(for: content)
-        let contentView = self.wrapInGlassIfNeeded(hosting)
-        if panel.contentView !== contentView {
-            panel.contentView = contentView
+        if panel.contentView !== hosting {
+            panel.contentView = hosting
         }
 
         let fittingSize = hosting.fittingSize
@@ -105,8 +102,6 @@ final class MenuPanelController {
         frame.origin.y = oldTop - fittingSize.height
         panel.setFrame(frame, display: true)
     }
-
-    // MARK: - Glass Wrapping
 
     private func hostingView(for content: AnyView) -> NSHostingView<AnyView> {
         if let hosting = self.hostingView {
@@ -120,28 +115,9 @@ final class MenuPanelController {
         return hosting
     }
 
-    private func wrapInGlassIfNeeded(_ hosting: NSHostingView<AnyView>) -> NSView {
-        if #available(macOS 26, *), LiquidGlassAvailability.shouldApplyGlass {
-            if let glass = self.glassView {
-                glass.contentView = hosting
-                return glass
-            }
-
-            let glass = NSGlassEffectView()
-            glass.style = .regular
-            glass.cornerRadius = MenuPanelMetrics.shellCornerRadius
-            glass.contentView = hosting
-            self.glassView = glass
-            return glass
-        }
-        self.glassView = nil
-        return hosting
-    }
-
     private func teardownContent() {
         self.panel?.contentView = nil
         self.hostingView = nil
-        self.glassView = nil
     }
 
     // MARK: - Positioning
